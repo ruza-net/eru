@@ -1,6 +1,7 @@
 #[macro_use]
 mod utils;
 mod styles;
+mod behavior;
 
 
 use iced::Application;
