@@ -2,6 +2,7 @@
 mod utils;
 mod styles;
 mod behavior;
+mod components;
 
 mod model;
 
