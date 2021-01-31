@@ -3,6 +3,8 @@ mod utils;
 mod styles;
 mod behavior;
 
+mod model;
+
 
 use iced::Application;
 
