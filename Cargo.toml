@@ -10,6 +10,10 @@ edition = "2018"
 iced = { version = "0.2", features = ["canvas", "image"] }
 iced_native = "0.3"
 iced_graphics = "0.1"
+
 take_mut = "0.2"
+
 ron = "0.6"
 serde = "1"
+
+num = "0.3"
