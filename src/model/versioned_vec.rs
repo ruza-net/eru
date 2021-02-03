@@ -135,8 +135,18 @@ impl<X> VersionedVec<X> {
             .iter()
     }
 
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut X> {
+        self
+            .latest_mut()
+            .iter_mut()
+    }
+
     pub fn iter_indices(&self) -> impl Iterator<Item = (Index, &X)> {
         self.indices().zip(self.iter())
+    }
+
+    pub fn iter_mut_indices(&mut self) -> impl Iterator<Item = (Index, &mut X)> {
+        self.indices().zip(self.iter_mut())
     }
 }
 
