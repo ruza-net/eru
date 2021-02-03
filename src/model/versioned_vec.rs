@@ -107,6 +107,10 @@ impl<X> VersionedVec<X> {
         self.versions.first().unwrap()
     }
 
+    pub fn contains(&self, index: Index) -> bool {
+        self.get(index).is_some()
+    }
+
     pub fn get(&self, index: Index) -> Option<&X> {
         self.versions.get(index.pseudotime).map(|v| v.get(index.pos)).flatten()
     }
