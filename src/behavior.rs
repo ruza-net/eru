@@ -1,17 +1,16 @@
-pub trait View {
-    type Msg;
-
-    fn view(&self) -> iced::Element<'static, Self::Msg>;
+pub trait SimpleView {
+    fn view(&self) -> iced::Element<'static, ()>;
 }
 
-pub trait SimpleView: View<Msg = ()> {}
-impl<X: View<Msg = ()>> SimpleView for X {}
+
+pub trait Clickable {
+    fn state(&mut self) -> &mut iced::button::State;
+}
 
 
-impl View for String {
-    type Msg = ();
 
-    fn view(&self) -> iced::Element<'static, Self::Msg> {
-        iced::Text::new(self).into()
+impl SimpleView for String {
+    fn view(&self) -> iced::Element<'static, ()> {
+        iced::Text::new(self.to_string()).into()
     }
 }
