@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::behavior::View;
+use crate::behavior::SimpleView;
 
 use iced::{
     image,
@@ -19,7 +19,7 @@ enum Data {
     Image(image::Handle),
     Text(String),
 
-    Element(Box<dyn View>),
+    Element(Box<dyn SimpleView>),
 }
 
 
@@ -71,7 +71,7 @@ impl Icon {
             color: color.into(),
         }
     }
-    pub fn from(el: Box<dyn View>, color: impl Into<Color>) -> Self {
+    pub fn from(el: Box<dyn SimpleView>, color: impl Into<Color>) -> Self {
         let data = Data::Element(el);
 
         Self {

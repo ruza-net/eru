@@ -1,6 +1,6 @@
 use iced::button;
 
-use crate::behavior::View;
+use crate::behavior::SimpleView;
 use crate::model::Icon;
 
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ impl<Msg> Tooltip<Msg> {
         }
     }
 
-    pub fn from(el: Box<dyn View>, color: impl Into<iced::Color>) -> Self {
+    pub fn from(el: Box<dyn SimpleView>, color: impl Into<iced::Color>) -> Self {
         let icon = Icon::from(el, color);
 
         Self {
