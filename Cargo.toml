@@ -17,3 +17,4 @@ ron = "0.6"
 serde = "1"
 
 num = "0.3"
+colorsys = "0.6"

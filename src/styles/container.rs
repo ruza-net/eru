@@ -11,6 +11,11 @@ pub mod cell {
     pub const RADIUS: f32 = 4.;
 }
 
+pub mod color {
+    pub const DESATURATE_PERCENT: f64 = 0.85;
+    pub const LIGHTEN_PERCENT: f64 = 3.0;
+}
+
 pub const PADDING: u16 = 8;
 
 pub const CELL: Style = Style {
@@ -44,6 +49,22 @@ impl Style {
 
         color
     }
+
+    fn lighten_color(&self) -> iced::Color {
+        let linear = self.color.into_linear();
+
+        let mut hsl: colorsys::Hsl = colorsys::Rgb::from(crate::utils::color_scale_up(linear)).into();
+
+        let l = hsl.lightness();
+        hsl.set_lightness(l * color::LIGHTEN_PERCENT);
+
+        let s = hsl.saturation();
+        hsl.set_saturation(l * color::DESATURATE_PERCENT);
+
+        let linear = crate::utils::color_scale_down(colorsys::Rgb::from(hsl).into());
+
+        linear.into()
+    }
 }
 
 impl container::StyleSheet for Style {
@@ -59,12 +80,44 @@ impl container::StyleSheet for Style {
                         iced::Color::WHITE.into()
 
                     } else {
-                        self.bleak_color().into()
+                        self.lighten_color().into()
                     }
                 }),
 
-                ..Default::default()
+                ..fill![]
             },
         }
+    }
+}
+
+impl iced::button::StyleSheet for Style {
+    fn active(&self) -> iced::button::Style {
+        match self.kind {
+            Kind::Cell => iced::button::Style {
+                shadow_offset: [0., 0.].into(),
+                background: Some({
+                    if self.color == iced::Color::BLACK {
+                        iced::Color::WHITE.into()
+
+                    } else {
+                        self.lighten_color().into()
+                    }
+                }),
+
+                border_radius: cell::RADIUS,
+                border_width: cell::WIDTH,
+                border_color: self.color,
+
+                text_color: self.color,
+            },
+        }
+    }
+
+    fn hovered(&self) -> iced::button::Style {
+        let mut style = self.active();
+
+        style.shadow_offset = [0., 1.].into();
+
+        style
     }
 }

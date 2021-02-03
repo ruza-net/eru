@@ -19,10 +19,33 @@ macro_rules! color {
             r: $r as f32 / 255.,
             g: $g as f32 / 255.,
             b: $b as f32 / 255.,
-            a: $a as f32 / 255.,
+            a: $a as f32,
         }
     };
 }
+
+pub fn color_scale_up(color: [f32; 4]) -> [f32; 4] {
+    let [r, g, b, a] = color;
+
+    [
+        r * 255.,
+        g * 255.,
+        b * 255.,
+        a,
+    ]
+}
+pub fn color_scale_down(color: [f32; 4]) -> [f32; 4] {
+    let [r, g, b, a] = color;
+
+    [
+        r / 255.,
+        g / 255.,
+        b / 255.,
+        a,
+    ]
+}
+
+
 
 #[macro_export]
 macro_rules! file_contents {

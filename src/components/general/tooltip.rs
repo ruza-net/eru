@@ -66,7 +66,7 @@ impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
                 self.icon.view(size)
                     .map(|_| fill![]),
             )
-            .style(style::Border(self.icon.color()));
+            .style(crate::styles::container::Style::cell(self.icon.color()));
 
         if let Some(size) = size {
             btn = btn
