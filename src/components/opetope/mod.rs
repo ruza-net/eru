@@ -7,17 +7,6 @@ pub mod index {
     pub mod local {
         use super::*;
 
-        macro_rules! into_prev {
-            ( $($class:ident),* ) => (
-                $(
-                    impl $class {
-                        pub fn into_prev(self) -> super::prev::$class {
-                            super::prev::$class(self.0)
-                        }
-                    }
-                )*
-            );
-        }
 
         #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
         pub struct Cell(pub(in super::super) Index);
@@ -26,9 +15,11 @@ pub mod index {
             pub fn inner(&self) -> Index {
                 self.0
             }
-        }
 
-        into_prev! { Cell }
+            pub fn into_prev(self) -> super::prev::Cell {
+                super::prev::Cell(self.0)
+            }
+        }
     }
 
     pub mod prev {
@@ -40,6 +31,10 @@ pub mod index {
         impl Cell {
             pub fn inner(&self) -> Index {
                 self.0
+            }
+
+            pub fn into_local(self) -> super::local::Cell {
+                super::local::Cell(self.0)
             }
         }
     }
