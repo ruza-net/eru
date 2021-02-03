@@ -1,6 +1,6 @@
 use crate::model::versioned_vec::*;
 
-
+pub mod data;
 pub mod index {
     use super::*;
 
