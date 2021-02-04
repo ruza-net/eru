@@ -103,6 +103,17 @@ impl<X> VersionedVec<X> {
         self.versions.last().unwrap()
     }
 
+    pub fn last_index(&self) -> Option<Index> {
+        let v = self.latest();
+
+        if v.is_empty() {
+            None
+
+        } else {
+            Some(unsafe { Index::from_raw_parts(v.len() - 1, self.pseudotime()) })
+        }
+    }
+
     pub fn oldest(&self) -> &Vec<X> {
         self.versions.first().unwrap()
     }
@@ -124,7 +135,7 @@ impl<X> VersionedVec<X> {
 //
 impl<X> VersionedVec<X> {
     pub fn indices(&self) -> impl Iterator<Item = Index> {
-        let pseudotime = self.versions.len() - 1;
+        let pseudotime = self.pseudotime();
 
         let len = self.latest().len();
 
@@ -157,6 +168,10 @@ impl<X> VersionedVec<X> {
 // IMPL: Private Utils
 //
 impl<X> VersionedVec<X> {
+    fn pseudotime(&self) -> usize {
+        self.versions.len() - 1
+    }
+
     fn latest_mut(&mut self) -> &mut Vec<X> {
         self.versions.last_mut().unwrap()
     }
