@@ -1,6 +1,5 @@
 use iced::container;
 
-
 pub mod button {
     pub const WIDTH: f32 = 3.;
     pub const RADIUS: f32 = 10.;
@@ -14,15 +13,21 @@ pub mod cell {
 pub mod color {
     pub const DESATURATE_PERCENT: f64 = 0.85;
     pub const LIGHTEN_PERCENT: f64 = 3.0;
+
+    pub const SELECTED: iced::Color = color![255; 154; 97];
 }
 
 pub const PADDING: u16 = 8;
 
 pub const CELL: Style = Style {
-    kind: Kind::Cell,
+    kind: Kind::Cell { selected: false },
     color: iced::Color::BLACK,
 };
 
+pub const SELECTED_CELL: Style = Style {
+    kind: Kind::Cell { selected: true },
+    color: iced::Color::BLACK,
+};
 
 pub struct Style {
     kind: Kind,
@@ -31,14 +36,13 @@ pub struct Style {
 
 #[derive(Debug, Clone, Copy)]
 enum Kind {
-    Cell,
+    Cell { selected: bool },
 }
-
 
 impl Style {
     pub fn cell(color: iced::Color) -> Self {
         Self {
-            kind: Kind::Cell,
+            kind: Kind::Cell { selected: false },
             color,
         }
     }
@@ -53,13 +57,14 @@ impl Style {
     fn lighten_color(&self) -> iced::Color {
         let linear = self.color.into_linear();
 
-        let mut hsl: colorsys::Hsl = colorsys::Rgb::from(crate::utils::color_scale_up(linear)).into();
+        let mut hsl: colorsys::Hsl =
+            colorsys::Rgb::from(crate::utils::color_scale_up(linear)).into();
 
         let l = hsl.lightness();
         hsl.set_lightness(l * color::LIGHTEN_PERCENT);
 
         let s = hsl.saturation();
-        hsl.set_saturation(l * color::DESATURATE_PERCENT);
+        hsl.set_saturation(s * color::DESATURATE_PERCENT);
 
         let linear = crate::utils::color_scale_down(colorsys::Rgb::from(hsl).into());
 
@@ -70,13 +75,16 @@ impl Style {
 impl container::StyleSheet for Style {
     fn style(&self) -> container::Style {
         match self.kind {
-            Kind::Cell => container::Style {
+            Kind::Cell { selected } => container::Style {
                 border_color: self.color,
                 border_width: cell::WIDTH,
                 border_radius: cell::RADIUS,
 
                 background: Some({
-                    if self.color == iced::Color::BLACK {
+                    if selected {
+                        color::SELECTED.into()
+
+                    } else if self.color == iced::Color::BLACK {
                         iced::Color::WHITE.into()
 
                     } else {
@@ -93,10 +101,13 @@ impl container::StyleSheet for Style {
 impl iced::button::StyleSheet for Style {
     fn active(&self) -> iced::button::Style {
         match self.kind {
-            Kind::Cell => iced::button::Style {
+            Kind::Cell { selected } => iced::button::Style {
                 shadow_offset: [0., 0.].into(),
                 background: Some({
-                    if self.color == iced::Color::BLACK {
+                    if selected {
+                        color::SELECTED.into()
+
+                    } else if self.color == iced::Color::BLACK {
                         iced::Color::WHITE.into()
 
                     } else {
