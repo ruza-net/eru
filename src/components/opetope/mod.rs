@@ -51,6 +51,7 @@ pub use diagram::Diagram;
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Error {
+    TooMuchDepth(usize),
     NoSuchCell(Index),
     CellsDoNotFormTree(Vec<Index>),
 }
@@ -85,11 +86,33 @@ common_methods! {
 
 pub mod viewing {
     use super::*;
+    use std::fmt;
 
+
+    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    pub struct ViewIndex {
+        pub(in super) index: Index,
+        pub(in super) depth: usize,
+    }
 
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
     pub enum Message {
         Idle,
-        Select(Index),
+        Select(ViewIndex),
+    }
+
+
+    // IMPL: Accessing
+    //
+    impl ViewIndex {
+        pub fn inner(&self) -> Index {
+            self.index
+        }
+    }
+
+    impl fmt::Display for ViewIndex {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write![fmt, "[{} in layer {}]", self.index, self.depth]
+        }
     }
 }

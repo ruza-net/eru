@@ -11,9 +11,11 @@ pub struct Tower<Data> {
 // IMPL: Initialization
 //
 impl<Data> Tower<Data> {
-    pub fn init(root: Data) -> (Index, Self) {
+    pub fn init(root: Data) -> (ViewIndex, Self) {
+        let index = unsafe { Index::from_raw_parts(0, 0) };
+
         (
-            unsafe { Index::from_raw_parts(0, 0) },
+            ViewIndex { index, depth: 0 },
             Self {
                 cells: vec![root].into(),
             },
@@ -24,19 +26,27 @@ impl<Data> Tower<Data> {
 // IMPL: Editing
 //
 impl<Data: Clone> Tower<Data> {
-    pub fn extrude(&mut self, cell: Index, group: Data) -> Result<Index, Error> {
+    pub fn extrude(&mut self, cell: ViewIndex, group: Data) -> Result<ViewIndex, Error> {
+        let cell = Self::valid_level(cell)?;
+
         self.cells
             .try_insert(cell + 1, group)
+            .map(|index| ViewIndex { index, depth: 0 })
             .map_err(|_| Error::NoSuchCell(cell))
     }
 
-    pub fn sprout(&mut self, cell: Index, group: Data) -> Result<Index, Error> {
+    pub fn sprout(&mut self, cell: ViewIndex, group: Data) -> Result<ViewIndex, Error> {
+        let cell = Self::valid_level(cell)?;
+
         self.cells
             .try_insert(cell, group)
+            .map(|index| ViewIndex { index, depth: 0 })
             .map_err(|_| Error::NoSuchCell(cell))
     }
 
-    pub fn delete(&mut self, cell: Index) -> Result<Data, Error> {
+    pub fn delete(&mut self, cell: ViewIndex) -> Result<Data, Error> {
+        let cell = Self::valid_level(cell)?;
+
         let removed
         = self.cells
             .try_remove(cell)
@@ -73,6 +83,19 @@ impl<Data> Tower<Data> {
 
         } else {
             Ok(vec![])
+        }
+    }
+}
+
+// IMPL: Utils
+//
+impl<Data> Tower<Data> {
+    fn valid_level(cell: ViewIndex) -> Result<Index, Error> {
+        if let ViewIndex { index, depth: 0 } = cell {
+            Ok(index)
+
+        } else {
+            Err(Error::TooMuchDepth(cell.depth))
         }
     }
 }
