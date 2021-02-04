@@ -70,23 +70,47 @@ pub enum EditResult<O, Data> {
 
 
 macro_rules! common_methods {
-    ( $( $name:ident ( $($arg:ident : $t:ty),* ) $(-> $ret:ty)? ),* ) => {
-        impl<Data> Tail<Data> {
-            $(
-                fn $name(&self $(, $arg: $t)*) $(-> $ret)? {
-                    match self {
-                        Self::Tower(d) => d.$name($($arg)*),
-                        Self::Diagram(d) => d.$name($($arg)*),
-                    }
+    (
+        $( $([$mt:ident])? $name:ident ( $($arg:ident : $t:ty),* ) $(-> $ret:ty)? ),*
+    ) => {
+        $(
+            fn $name(&$($mt)? self $(, $arg: $t)*) $(-> $ret)? {
+                match self {
+                    Self::Tower(d) => d.$name($($arg),*).into(),
+                    Self::Diagram(d) => d.$name($($arg),*).into(),
                 }
-            )*
-        }
+            }
+        )*
     };
 }
 
-common_methods! {
-    contents_of(cell: index::local::Cell) -> Option<Vec<index::local::Cell>>,
-    collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>
+impl<Data> Tail<Data> {
+    common_methods! {
+        level() -> usize,
+        contents_of(cell: index::local::Cell) -> Option<Vec<index::local::Cell>>,
+        collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>
+    }
+}
+
+impl<Data: SimpleView> Tail<data::Selectable<Data>> {
+    common_methods! {
+        [mut] view() -> iced::Element<viewing::Message>
+    }
+}
+
+impl<Data: Clone> Tail<Data> {
+    common_methods! {
+        [mut] extrude(cell: viewing::ViewIndex, group: Data) -> EditResult<viewing::ViewIndex, Data>
+    }
+}
+
+impl<Data> Tail<data::Selectable<Data>> {
+    common_methods! {
+        [mut] select(cell: viewing::ViewIndex) -> Result<(), Error>
+    }
+}
+
+
 impl<O, Data> EditResult<O, Data> {
     pub fn unwrap(self) -> O {
         match self {

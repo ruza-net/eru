@@ -57,6 +57,14 @@ impl<Data: Clone> Tower<Data> {
     }
 }
 
+// IMPL: Transforming
+//
+impl<Data> Tower<Data> {
+    pub fn into_next(self) -> Diagram<Data> {
+        Tail::Tower(self).into()
+    }
+}
+
 // IMPL: Accessing
 //
 impl<Data> Tower<Data> {
@@ -90,9 +98,30 @@ impl<Data> Tower<Data> {
 // IMPL: Utils
 //
 impl<Data> Tower<Data> {
+    pub fn level(&self) -> usize {
+        0
+    }
+
     fn valid_level(cell: ViewIndex) -> Result<Index, Error> {
         if let ViewIndex { index, depth: 0 } = cell {
             Ok(index)
+
+        } else {
+            Err(Error::TooMuchDepth(cell.depth))
+        }
+    }
+}
+
+// IMPL: Selections
+//
+impl<Data> Tower<data::Selectable<Data>> {
+    pub fn select(&mut self, cell: ViewIndex) -> Result<(), Error> {
+        if let ViewIndex { index, depth: 0 } = cell {
+            self.cells
+                .get_mut(index).ok_or(Error::NoSuchCell(index))?
+                .select();
+
+            Ok(())
 
         } else {
             Err(Error::TooMuchDepth(cell.depth))
