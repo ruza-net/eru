@@ -56,10 +56,17 @@ pub enum Error {
     CellsDoNotFormTree(Vec<Index>),
 }
 
-enum Tail<Data> {
+pub enum Tail<Data> {
     Tower(Tower<Data>),
     Diagram(Box<Diagram<Data>>),
 }
+
+pub enum EditResult<O, Data> {
+    Ok(O),
+    OkCopied { result: O, copy: Tail<Data> },
+    Err(Error),
+}
+
 
 
 macro_rules! common_methods {
@@ -80,6 +87,33 @@ macro_rules! common_methods {
 common_methods! {
     contents_of(cell: index::local::Cell) -> Option<Vec<index::local::Cell>>,
     collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>
+impl<O, Data> EditResult<O, Data> {
+    pub fn unwrap(self) -> O {
+        match self {
+            Self::Ok(result) => result,
+            Self::OkCopied { result, .. } => result,
+
+            Self::Err(e) => panic!["called `EditResult::unwrap` on error: {:?}", e],
+        }
+    }
+
+    pub fn map<D>(self, f: impl FnOnce(O) -> D) -> EditResult<D, Data> {
+        match self {
+            Self::Ok(result) => EditResult::Ok(f(result)),
+            Self::OkCopied { result, copy } => EditResult::OkCopied { result: f(result), copy },
+
+            Self::Err(e) => EditResult::Err(e),
+        }
+    }
+}
+
+impl<O, Data> From<Result<O, Error>> for EditResult<O, Data> {
+    fn from(res: Result<O, Error>) -> EditResult<O, Data> {
+        match res {
+            Ok(o) => Self::Ok(o),
+            Err(e) => Self::Err(e),
+        }
+    }
 }
 
 
