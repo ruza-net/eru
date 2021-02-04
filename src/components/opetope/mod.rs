@@ -1,3 +1,4 @@
+use crate::behavior::SimpleView;
 use crate::model::versioned_vec::*;
 
 pub mod data;

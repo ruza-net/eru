@@ -1,4 +1,4 @@
-use super::*;
+use super::{ *, viewing::ViewIndex };
 
 
 
@@ -135,59 +135,29 @@ pub mod viewing {
     use super::*;
     use super::super::viewing::Message;
 
-    use crate::behavior;
+    use crate::behavior::SimpleView;
 
 
-    impl<Data> Tower<Data>
-    where Data: behavior::SimpleView + behavior::Clickable {
+    impl<Data> Tower<data::Selectable<Data>>
+    where Data: SimpleView {
 
         pub fn view(&mut self) -> iced::Element<Message> {
-            let mut tower = self.cells.iter_mut_indices();
+            let mut tower = self
+                .cells
+                .iter_mut_indices()
+                .map(|(index, data)| (ViewIndex { index, depth: 0 }, data));
 
             let (top_idx, top_data) = tower.next().unwrap();
 
             let mut downmost_cell: iced::Element<_>
-                = Self::end(
-                    top_data,
-                    top_idx,
-                );
+                = top_data.view_cell(top_idx, None);
 
             while let Some((idx, data)) = tower.next() {
                 downmost_cell
-                    = Self::cell(
-                        downmost_cell,
-                        data,
-                        idx,
-                    );
+                    = data.view_cell(idx, Some(downmost_cell));
             }
 
-            downmost_cell.into()
-        }
-    }
-
-    impl<Data> Tower<Data>
-    where Data: behavior::SimpleView + behavior::Clickable {
-
-        fn end(data: &mut Data, index: Index) -> iced::Element<Message> {
-            let contents = data.view().map(|_| Message::Idle);
-
-            iced::Button::new(data.state(), contents)
-                .style(crate::styles::container::CELL)
-                .padding(crate::styles::container::PADDING)
-                .on_press(Message::Select(index))
-                .into()
-        }
-
-        fn cell<'c>(contents: impl Into<iced::Element<'c, Message>>, data: &'c mut Data, index: Index) -> iced::Element<'c, Message> {
-            let contents = iced::Column::new()
-                .push(contents)
-                .push(data.view().map(|_| Message::Idle));
-
-            iced::Button::new(data.state(), contents)
-                .style(crate::styles::container::CELL)
-                .padding(crate::styles::container::PADDING)
-                .on_press(Message::Select(index))
-                .into()
+            downmost_cell
         }
     }
 }

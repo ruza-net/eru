@@ -8,6 +8,8 @@ pub mod button {
 pub mod cell {
     pub const WIDTH: f32 = 3.;
     pub const RADIUS: f32 = 4.;
+
+    pub const SPACING: u16 = 15;
 }
 
 pub mod color {
@@ -18,6 +20,11 @@ pub mod color {
 }
 
 pub const PADDING: u16 = 8;
+
+pub const LINE: Style = Style {
+    kind: Kind::Line,
+    color: iced::Color::BLACK,
+};
 
 pub const CELL: Style = Style {
     kind: Kind::Cell { selected: false },
@@ -36,6 +43,7 @@ pub struct Style {
 
 #[derive(Debug, Clone, Copy)]
 enum Kind {
+    Line,
     Cell { selected: bool },
 }
 
@@ -94,6 +102,12 @@ impl container::StyleSheet for Style {
 
                 ..fill![]
             },
+
+            Kind::Line => container::Style {
+                background: Some(self.color.into()),
+
+                ..fill![]
+            },
         }
     }
 }
@@ -120,6 +134,12 @@ impl iced::button::StyleSheet for Style {
                 border_color: self.color,
 
                 text_color: self.color,
+            },
+
+            Kind::Line => iced::button::Style {
+                background: Some(self.color.into()),
+
+                ..fill![]
             },
         }
     }
