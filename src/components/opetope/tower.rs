@@ -68,6 +68,10 @@ impl<Data> Tower<Data> {
 // IMPL: Accessing
 //
 impl<Data> Tower<Data> {
+    pub fn has_groups(&self) -> bool {
+        self.cells.len() > 1
+    }
+
     pub fn contents_of(&self, cell: index::local::Cell) -> Option<Vec<index::local::Cell>> {
         let up_cell = cell.inner() - 1;
 

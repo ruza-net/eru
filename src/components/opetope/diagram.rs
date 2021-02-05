@@ -62,8 +62,8 @@ impl<Data> Diagram<Data> {
         self.cells.get_mut(cell.inner())
     }
 
-    pub fn bottom_most(&self) -> Option<Index> {
-        self.cells.last_index()
+    pub fn has_groups(&self) -> bool {
+        todo!()
     }
 
     pub fn contents_of(&self, cell: index::local::Cell) -> Option<Vec<index::local::Cell>> {

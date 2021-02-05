@@ -88,6 +88,8 @@ macro_rules! common_methods {
 impl<Data> Tail<Data> {
     common_methods! {
         level() -> usize,
+
+        has_groups() -> bool,
         contents_of(cell: index::local::Cell) -> Option<Vec<index::local::Cell>>,
         collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>
     }
