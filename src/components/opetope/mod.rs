@@ -54,7 +54,9 @@ pub use diagram::Diagram;
 pub enum Error {
     TooMuchDepth(usize),
     NoSuchCell(Index),
+
     CellsDoNotFormTree(Vec<Index>),
+    CellsDoNotHaveOutput(Vec<Index>),
 
     CannotConvertAlreadyGrouped,
 }
@@ -93,7 +95,9 @@ impl<Data> Tail<Data> {
 
         has_groups() -> bool,
         contents_of(cell: index::local::Cell) -> Option<Vec<index::local::Cell>>,
-        collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>
+
+        collective_inputs(cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error>,
+        common_output(cells: &[index::local::Cell]) -> Result<index::prev::Cell, Error>
     }
 }
 

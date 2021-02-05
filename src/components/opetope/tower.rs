@@ -83,6 +83,14 @@ impl<Data> Tower<Data> {
         }
     }
 
+    pub fn common_output(&self, cells: &[index::local::Cell]) -> Result<index::prev::Cell, Error> {
+        Err(Error::CellsDoNotHaveOutput(cells
+            .iter()
+            .map(|cell| cell.inner())
+            .collect()
+        ))
+    }
+
     pub fn collective_inputs(&self, cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error> {
         let bad = cells
             .iter()

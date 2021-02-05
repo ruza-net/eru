@@ -1,4 +1,6 @@
 use super::*;
+use std::collections::HashSet;
+
 
 
 macro_rules! dispatch_level {
@@ -92,18 +94,45 @@ impl<Data> Diagram<Data> {
     }
 
     pub fn collective_inputs(&self, cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error> {
-        self.check_cells_form_tree(cells)?;
+        let cells = cells
+            .iter()
+            .map(|cell| cell.inner());
+
+        let outputs: HashSet<_> = cells.clone()
+            .map(|cell| self.output_of(cell).unwrap())
+            .collect();
 
         Ok(cells
-            .iter()
-            .map(|cell| self.inputs_of(*cell).unwrap())
+            .map(|cell| self.inputs_of(cell).unwrap())
             .flatten()
+            .filter(|input| !outputs.contains(input))
             .collect())
     }
 
-    pub fn inputs_of(&self, cell: index::local::Cell) -> Option<Vec<index::prev::Cell>> {
-        let cell = cell.inner();
+    pub fn common_output(&self, cells: &[index::local::Cell]) -> Result<index::prev::Cell, Error> {
+        let cells = cells
+            .iter()
+            .map(|cell| cell.inner());
 
+        let inputs: HashSet<_> = cells.clone()
+            .map(|cell| self.inputs_of(cell).unwrap())
+            .flatten()
+            .collect();
+
+        let outputs: Vec<_> = cells.clone()
+            .map(|cell| self.output_of(cell).unwrap())
+            .filter(|output| !inputs.contains(output))
+            .collect();
+
+        if let [common_out] = outputs[..] {
+            Ok(common_out)
+
+        } else {
+            Err(Error::CellsDoNotFormTree(cells.collect()))
+        }
+    }
+
+    fn inputs_of(&self, cell: Index) -> Option<Vec<index::prev::Cell>> {
         let cell = self.cells.get(cell)?;
 
         match &cell.site {
@@ -116,11 +145,20 @@ impl<Data> Diagram<Data> {
                 ),
 
             Site::Group { contents } => Some(
-                self.prev
-                    .collective_inputs(contents).ok()?
+                self.collective_inputs(contents).ok()?
                     .into_iter()
                     .collect()
             ),
+        }
+    }
+
+    fn output_of(&self, cell: Index) -> Option<index::prev::Cell> {
+        let cell = self.cells.get(cell)?;
+
+        match &cell.site {
+            Site::End { corresponding_group } => Some(*corresponding_group),
+
+            Site::Group { contents } => self.common_output(contents).ok(),
         }
     }
 }
@@ -152,6 +190,30 @@ impl<Data> Diagram<Data> {
 
     fn is_rooted(self) -> Result<Self, Error> {
         todo![]
+    }
+
+    fn cell_inputs(&self) -> impl Iterator<Item = Vec<index::prev::Cell>> {
+        self.cells
+            .indices()
+            .map(|cell| self.inputs_of(cell).unwrap())
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn cell_outputs(&self) -> impl Iterator<Item = index::prev::Cell> {
+        self.cells
+            .indices()
+            .map(|cell| self.output_of(cell).unwrap())
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn cell_indices(&self) -> impl Iterator<Item = ViewIndex> {
+        self.cells
+            .indices()
+            .map(|index| ViewIndex { index, depth: self.level() })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     pub fn level(&self) -> usize {
