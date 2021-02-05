@@ -118,6 +118,14 @@ impl<X> VersionedVec<X> {
         self.versions.first().unwrap()
     }
 
+    pub fn len(&self) -> usize {
+        self.latest().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.latest().is_empty()
+    }
+
     pub fn contains(&self, index: Index) -> bool {
         self.get(index).is_some()
     }
