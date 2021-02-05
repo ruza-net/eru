@@ -83,7 +83,10 @@ impl<Data> Diagram<Data> {
     }
 
     pub fn has_groups(&self) -> bool {
-        todo!()
+        self
+            .cells
+            .iter()
+            .any(|cell| cell.is_group())
     }
 
     pub fn contents_of(&self, cell: index::local::Cell) -> Option<Vec<index::local::Cell>> {
@@ -237,7 +240,19 @@ impl<Data> Diagram<data::Selectable<Data>> {
 }
 
 
+impl<Data> MetaCell<Data> {
+    fn is_group(&self) -> bool {
+        self.site.is_group()
+    }
+}
+
 impl Site {
+    fn is_group(&self) -> bool {
+        match self {
+            Self::End { .. } => false,
+            Self::Group { .. } => true,
+        }
+    }
     fn contents(&self) -> Option<&[index::local::Cell]> {
         match self {
             Self::End { .. } => None,
