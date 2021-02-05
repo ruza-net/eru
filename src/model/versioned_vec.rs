@@ -39,7 +39,7 @@ impl<X> From<Vec<X>> for VersionedVec<X> {
 impl<X> VersionedVec<X> {
     pub fn new() -> Self {
         Self {
-            versions: fill![],
+            versions: vec![vec![]],
         }
     }
 
