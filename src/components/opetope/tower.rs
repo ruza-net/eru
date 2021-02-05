@@ -60,8 +60,8 @@ impl<Data: Clone> Tower<Data> {
 // IMPL: Transforming
 //
 impl<Data> Tower<Data> {
-    pub fn into_next(self) -> Diagram<Data> {
-        Tail::Tower(self).into()
+    pub fn into_next(self) -> Result<Diagram<Data>, Error> {
+        Diagram::new(Tail::Tower(self))
     }
 }
 

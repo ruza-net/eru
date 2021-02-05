@@ -51,6 +51,24 @@ pub struct Diagram<Data> {
 
 
 
+// IMPL: Initialization
+//
+impl<Data> Diagram<Data> {
+    pub fn new(tail: Tail<Data>) -> Result<Self, Error> {
+
+        if tail.has_groups() {
+            return Err(Error::CannotConvertAlreadyGrouped);
+        }
+
+        Ok(Self {
+            level: tail.level() + 1,
+
+            prev: tail,
+            cells: fill![],
+        })
+    }
+}
+
 // IMPL: Accessing
 //
 impl<Data> Diagram<Data> {
@@ -111,7 +129,7 @@ impl<Data> Diagram<Data> {
 //
 impl<Data> Diagram<Data> {
     pub fn into_next(self) -> Result<Diagram<Data>, Error> {
-        Ok(Tail::Diagram(Box::new(self.is_rooted()?)).into())
+        Diagram::new(Tail::Diagram(Box::new(self.is_rooted()?)))
     }
 }
 
@@ -162,20 +180,6 @@ impl Site {
         match self {
             Self::End { .. } => None,
             Self::Group { contents } => Some(contents),
-        }
-    }
-}
-
-
-impl<Data> From<Tail<Data>> for Diagram<Data> {
-    fn from(prev: Tail<Data>) -> Self {
-        let level = prev.level() + 1;
-
-        Self {
-            cells: fill![],
-
-            level,
-            prev,
         }
     }
 }

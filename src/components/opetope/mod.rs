@@ -55,6 +55,8 @@ pub enum Error {
     TooMuchDepth(usize),
     NoSuchCell(Index),
     CellsDoNotFormTree(Vec<Index>),
+
+    CannotConvertAlreadyGrouped,
 }
 
 pub enum Tail<Data> {
