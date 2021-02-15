@@ -71,6 +71,10 @@ impl<Data> Tower<Data> {
 // IMPL: Accessing
 //
 impl<Data> Tower<Data> {
+    pub const fn level(&self) -> usize {
+        0
+    }
+
     pub fn has_groups(&self) -> bool {
         self.cells.len() > 1
     }
@@ -134,8 +138,6 @@ impl<Data> Tower<Data> {
 // IMPL: Utils
 //
 impl<Data> Tower<Data> {
-    pub fn level(&self) -> usize {
-        0
     fn extract(sel: &Selection) -> Result<TimelessIndex, Error> {
         sel .as_ground()
             .ok_or(Error::TooMuchDepth(sel.level()))
@@ -150,6 +152,14 @@ impl<Data> Tower<Data> {
         }
     }
 }
+
+impl<Data: Clone> Tower<Data> {
+    pub fn deep_copy(&self, level: usize) -> Result<Tail<Data>, Error> {
+        if level == 0 {
+            Ok(Tail::Tower(self.clone()))
+
+        } else {
+            Err(Error::TooMuchDepth(level))
         }
     }
 }
