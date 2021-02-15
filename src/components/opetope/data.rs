@@ -20,6 +20,14 @@ impl<Data> Selectable<Data> {
     pub fn select(&mut self) {
         self.selected = !self.selected;
     }
+
+    pub fn unselect(&mut self) {
+        self.selected = false;
+    }
+
+    pub fn selected(&self) -> bool {
+        self.selected
+    }
 }
 
 impl<Data: SimpleView> Selectable<Data> {
