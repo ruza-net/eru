@@ -16,7 +16,7 @@ pub use index::{ TimedIndex, TimelessIndex, IndexError };
 /// point to the data in storage. When the tracing vector needs to move the elements, it creates a
 /// new version encoding the new ordering.
 ///
-/// # Comparison with TracingVec
+/// # Comparison with VersionedVec
 /// A tracing vector has two major benefits: it doesn't need to `clone` its contents when it moves
 /// elements, and it can convert a pseudotime reference to an absolute index, even when the
 /// pseudotime is long obsolete.
