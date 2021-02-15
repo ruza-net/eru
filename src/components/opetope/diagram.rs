@@ -648,29 +648,212 @@ impl Face {
 
 pub mod viewing {
     use super::*;
-    use crate::components::opetope::{
-        viewing::Message,
-        line,
-    };
+    use crate::components::opetope::viewing::Message;
 
     use crate::behavior;
 
+    use std::iter;
+    use itertools::Itertools;
 
-    impl<Data> Diagram<Data>
-    where Data: behavior::SimpleView + behavior::Clickable {
+
+    const SPACING: u16 = crate::styles::container::cell::SPACING;
+    const PADDING: u16 = crate::styles::container::PADDING;
+
+    impl<'c, Data: 'c> Diagram<data::Selectable<Data>>
+    where Data: behavior::SimpleView {
 
         pub fn view(&mut self) -> iced::Element<Message> {
-            todo![]
+            let mut input_separations =
+            self.all_inputs()
+                .into_iter()
+                .map(|_| SPACING);
+
+            let level = self.level() - 1;// NOTE: Since `ViewIndex::Leveled` is shifted left.
+
+            let prev =
+            self.prev
+                .view();
+
+            let mut cells: Vec<_> =
+            self.cells
+                .iter_mut_timeless_indices()
+                .map(|(index, data)| (ViewIndex::Leveled { level, path: vec![index] }, data))
+                .collect();
+
+            let (_, this) = Self::view_diagram(&mut input_separations, &mut cells);
+
+            iced::Row::new()
+                .spacing(SPACING * 2)
+                .push(prev)
+                .push(this)
+                .into()
+        }
+
+        fn view_diagram(
+            input_separations: &mut impl Iterator<Item = u16>,
+            cells: &mut Vec<(ViewIndex, &'c mut MetaCell<data::Selectable<Data>>)>,
+        ) -> (Vec<u16>, iced::Element<'c, Message>)
+        {
+            if let Some((index, this_cell)) = cells.pop() {
+                let (level, path) = extract![index => level, path in ViewIndex::Leveled { level, path }];
+
+                let mut upstream = vec![];
+                let mut widths = vec![SPACING];
+
+                let input_count = this_cell.face.ends.len();
+
+                // NOTE: Render subdiagrams going up the input lines.
+                //
+                for i in 0 .. input_count {
+                    // If the next cell runs into the next input...
+                    //
+                    let is_connected =
+                    if let Some((_, cell)) = cells.last() {
+                        &this_cell.face.ends[i] == &cell.face.fill
+
+                    } else {
+                        false
+                    };
+
+                    // ...connect it.
+                    //
+                    if is_connected {
+                        let (margins, subdiagram) = Self::view_diagram(input_separations, cells);
+
+                        let width =
+                        margins
+                            .into_iter()
+                            .fold(0, |acc, x| acc + x);
+
+                        upstream.push(Some(subdiagram));
+                        widths.push(width - 2 * SPACING);// NOTE: `SPACING` is always added as a margin.
+
+                    } else {
+                        upstream.push(None);
+                        widths.push(input_separations.next().unwrap());
+                    }
+                }
+
+                widths.push(SPACING);
+
+                let mut min_margins = vec![];
+
+                // NOTE: Calculate minimal margins of input lines.
+                //
+                for i in 0 .. input_count + 1 {
+                    let margin = widths[i].max(widths[i + 1]);
+
+                    min_margins.push(margin);
+                }
+
+                let (margins, this_cell) = this_cell.view(min_margins, level, path);
+
+                let subdiagrams = Self::view_subdiagrams(&margins, &widths, upstream);
+
+                let lines = Self::view_lines(&margins);
+
+                let diagram =
+                iced::Column::new()
+                    .push(
+                        iced::Row::with_children(subdiagrams).align_items(iced::Align::Center)
+                    )
+                    .push(
+                        iced::Row::with_children(lines).align_items(iced::Align::Center)
+                    )
+                    .push(
+                        this_cell
+                    )
+                    .into();
+
+                (margins, diagram)
+
+            } else {
+                (vec![0], Self::view_line())
+            }
+        }
+
+        fn view_subdiagrams(margins: &[u16], widths: &[u16], upstream: Vec<Option<iced::Element<'c, Message>>>) -> Vec<iced::Element<'c, Message>> {
+            let upstream_spacers =
+            margins
+                .iter()
+                .copied()
+                .zip(widths.iter().copied())
+                .map(|(margin, width)| margin - width)
+                .map(|width| iced::Space::with_width(iced::Length::Units(width)).into());
+
+
+            upstream_spacers
+                .interleave(
+                    upstream
+                        .into_iter()
+                        .map(|subdiagram| subdiagram.unwrap_or_else(|| iced::Space::with_height(0.into()).into()))
+                )
+                .collect()
+        }
+
+        fn view_lines(margins: &[u16]) -> Vec<iced::Element<'static, Message>> {
+            let line_spacers =
+            margins
+                .iter()
+                .copied()
+                .map(|width| iced::Space::with_width(iced::Length::Units(width)).into());
+
+
+            line_spacers
+                .interleave_shortest(
+                    iter::repeat_with(|| Self::view_line())
+                        .take(margins.len() - 1)
+                )
+                .collect()
+            //
+            // TODO: Account for lines' width.
+        }
+
+        fn view_line() -> iced::Element<'static, Message> {
+            iced::Container::new(
+                iced::Space::new(
+                    iced::Length::Units(3),
+                    iced::Length::Units(30),// TODO: Figure out how to make it responsive.
+                )
+            )
+            .style(crate::styles::container::LINE)
+            .into()
         }
     }
 
-    impl<Data> Diagram<Data>
-    where Data: behavior::SimpleView + behavior::Clickable {
+    impl<Data> MetaCell<data::Selectable<Data>>
+    where Data: behavior::SimpleView {
+        fn view(&mut self, line_margins: Vec<u16>, level: usize, path: Vec<TimelessIndex>) -> (Vec<u16>, iced::Element<Message>) {
 
-        fn end(&mut self, index: Index) -> iced::Element<Message> {
-            let inputs = self.inputs_of(index::local::Cell(index)).unwrap();
+            let (margins, content) =
+            if let Some(content) = &mut self.content {
 
-            todo![]
+                let mut inner_cells =
+                content
+                    .iter_mut_timeless_indices()
+                    .map(|(index, data)| {
+                        let mut path = path.clone();
+                        path.push(index);
+
+                        (
+                            ViewIndex::Leveled { level, path },
+                            data,
+                        )
+                    })
+                    .collect();
+
+                let (mut actual_margins, content) = Diagram::view_diagram(&mut line_margins.into_iter(), &mut inner_cells);
+
+                actual_margins[0] += PADDING;
+                *actual_margins.last_mut().unwrap() += PADDING;
+
+                (actual_margins, Some(content))
+
+            } else {
+                (line_margins, None)
+            };
+
+            (margins, self.data.view_cell(ViewIndex::Leveled { level, path }, content))
         }
     }
 }
