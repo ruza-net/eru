@@ -8,9 +8,7 @@ edition = "2018"
 
 [dependencies]
 iced = { git = "https://github.com/hecrj/iced", rev = "12c0c18d662d2b817b559b94c71d18e122c76990", features = ["image"] }
-# iced = { version = "0.2", features = ["canvas", "image"] }
-# iced_native = "0.3"
-# iced_graphics = "0.1"
+iced_aw = { git = "https://github.com/Kaiden42/iced_aw", rev = "24a309939a2750cb40e7306d82f438236f45d219" }
 
 take_mut = "0.2"
 
