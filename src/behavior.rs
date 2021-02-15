@@ -9,7 +9,7 @@ pub trait Clickable {
 
 
 
-impl SimpleView for String {
+impl<S: ToString> SimpleView for S {
     fn view(&self) -> iced::Element<'static, ()> {
         iced::Text::new(self.to_string()).into()
     }
