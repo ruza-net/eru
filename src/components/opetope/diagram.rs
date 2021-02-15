@@ -4,30 +4,31 @@ use std::collections::HashSet;
 
 
 
-macro_rules! dispatch_level {
-    (
-        $(
-            $v:vis fn $name:ident (&mut $self:ident, { $idx:ident, $dpth:ident } : ViewIndex $(, $arg:ident : $t:ty)* ) throws [$err:expr] $(-> $ret:ty)? $body:block
-        )*
-    ) => {
-        $(
-            $v fn $name(
-                &mut $self,
-                ViewIndex { index: $idx, depth: $dpth }: ViewIndex
-                $(, $arg: $t)*
-            ) $(-> $ret)? {
+macro_rules! interaction {
+    ( $name:ident ( &mut $self:ident, $cell:ident : &$sel_ty:ty $(, $arg:ident : $arg_ty:ty)* $(,)? ) in prev $prev_body:block in self $this_body:block ) => {
+        pub fn $name(&mut $self, $cell: &$sel_ty $(, $arg: $arg_ty)* ) -> EditResult<Interaction, Data> {
+            if $self.level() > $cell.level() + 1 {
+                let mut copy = $self.deep_copy($cell.level() + 1).unwrap();
 
-                if $self.level > $dpth {
-                    $self.prev.$name(ViewIndex { index: $idx, depth: $dpth } $(, $arg)*)
+                let result = copy.$name($cell $(, $arg)*);
 
-                } else if $self.level == $dpth
-                    $body
+                match result {
+                    EditResult::Ok(result) => EditResult::OkCopied { result, copy },
 
-                else {
-                    $err
+                    EditResult::OkCopied { .. } => unreachable![],
+
+                    e => e,
                 }
-            }
-        )*
+
+            } else if $self.level() < $cell.level() {
+                EditResult::Err(Error::TooMuchDepth($cell.level()))
+
+            } else if $self.level() == $cell.level()
+                $this_body
+
+            else
+                $prev_body
+        }
     };
 }
 
@@ -128,6 +129,161 @@ impl<Data> Diagram<Data> {
         } else {
             todo!()
         }
+    }
+}
+
+// IMPL: Editing
+//
+impl<Data: Clone> Diagram<Data> {
+    interaction!{ extrude(&mut self, cell: &Selection, group: Data, wrap: Data)
+        in prev {
+            self
+                .prev
+                .extrude(cell, group, wrap.clone())
+                .map(|inter| {
+                    let fill = extract![inter => group in Interaction::Here { action: Action::Extrude { group } }];
+
+                    let wrap = self.wrap(wrap, fill.clone());
+
+                    Interaction::InPrevious {
+                        wrap,
+                        action: Action::Extrude { group: fill },
+                    }
+                })
+                .into()
+        }
+
+        in self {
+            if cell.common_path().len() > 1 {
+                return EditResult::Err(Error::CannotExtrudeNestedCells(cell.clone()));
+            }
+
+            match self.group(&cell.as_paths(), group) {
+                Ok(group) =>
+                    EditResult::Ok(Interaction::Here {
+                        action: Action::Extrude { group },
+                    }),
+
+                Err(e) => EditResult::Err(e),
+            }
+        }
+    }
+
+    interaction!{ sprout(&mut self, index: &ViewIndex, end: Data, wrap: Data)
+        in prev {
+            self
+                .prev
+                .sprout(index, end, wrap.clone())
+                .map(|inter| {
+                    let fill = extract![inter => group in Interaction::Here { action: Action::Sprout { group } }];
+
+                    let wrap = self.wrap(wrap, fill.clone());
+
+                    Interaction::InPrevious {
+                        wrap,
+                        action: Action::Sprout { group: fill },
+                    }
+                })
+                .into()
+        }
+
+        in self {
+            match self.is_end(index) {
+                Ok(is_end) =>
+                    if !is_end {
+                        return EditResult::Err(Error::CannotSproutGroup(index.clone()));
+                    },
+
+                Err(e) => return EditResult::Err(e),
+            }
+
+            if let Some(cell) = self.get_mut(&index.path()) {
+                let face = cell.face.clone();
+
+                let end = MetaCell {
+                    data: end,
+
+                    face,
+                    content: None,
+                };
+
+                cell.content = Some(TracingVec::from(vec![end]));
+
+                EditResult::Ok(Interaction::Here {
+                    action: Action::Sprout { group: index.clone() },
+                })
+
+            } else {
+                EditResult::Err(Error::NoSuchCell(index.clone()))
+            }
+        }
+    }
+
+    fn group(&mut self, cells: &[Vec<TimelessIndex>], data: Data) -> Result<ViewIndex, Error> {
+        let (tail, cells) = self.check_form_tree(cells)?;
+
+        let cell_space = self.cell_space_mut(tail);
+
+        let face = Face::collect(
+            cell_space
+                .iter_timeless_indices()
+                .filter(|(index, _)| cells.contains(index))
+                .map(|(_, cell)| &cell.face)
+        );
+
+        let index =
+        cell_space
+            .try_replace_with(cells, |cells| {
+                let content = Some(TracingVec::from(cells));
+
+                MetaCell { data, face, content }
+            })
+            .map_err(Error::IndexError)?;
+
+        let index =
+        cell_space
+            .into_timeless(index)
+                .unwrap();
+
+        let mut path = tail.to_vec();
+        path.push(index);
+
+        Ok(self.into_index(path))
+    }
+
+    fn wrap(&mut self, data: Data, fill: ViewIndex) -> ViewIndex {
+        let ends =
+        self.prev
+            .contents_of(&fill.path())
+            .unwrap();
+
+        let cell_below = self.cell_with_end(&fill);
+
+        let cell = MetaCell {
+            data,
+            face: Face { ends, fill },
+
+            content: None,
+        };
+
+        let index =
+        if let Some(index) = cell_below {
+            self.cells.insert_before(index, cell);
+
+            index
+
+        } else {
+            self.cells.push(cell);
+
+            self.cells.last_index().unwrap()
+        };
+
+        let index =
+        self.cells
+            .into_timeless(index)
+            .unwrap();
+
+        self.into_index(vec![index])
     }
 }
 

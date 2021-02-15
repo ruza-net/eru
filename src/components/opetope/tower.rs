@@ -1,6 +1,49 @@
 use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
 
+macro_rules! interaction {
+    (
+        $name:ident ( $verify:ident [$ref_name:ident : $ref_ty:ty] $(, $arg:ident : $arg_ty:ty)* )
+        => $action:ident { $field:ident $(: $override:expr)? }
+        => $method:ident ( $($call_arg:ident),* )
+        $(where if !$invariant:ident => $err:ident)?
+    ) => {
+        pub fn $name(&mut self, $ref_name: & $ref_ty $(, $arg: $arg_ty)*) -> EditResult<Interaction, Data> {
+            if let Ok(index) = Self::$verify($ref_name) {
+                $(
+                    match self.$invariant($ref_name) {
+                        Ok($invariant) =>
+                            if !$invariant {
+                                return EditResult::Err(Error::$err($ref_name.clone()));
+                            },
+
+                        Err(e) => return EditResult::Err(e),
+                    }
+                )?
+
+                match
+                self
+                    .cells
+                    .$method(index $(, $call_arg)*)
+                    .map(|timed| self.cells.into_timeless(timed).unwrap())
+                    .map(ViewIndex::Ground)
+                    .map_err(move |e| Error::IndexError(e))
+                {
+                    Ok($field) =>
+                        EditResult::Ok(Interaction::Here {
+                            action: Action::$action { $field $(: $override)? },
+                        }),
+
+                    Err(e) =>
+                        EditResult::Err(e),
+                }
+
+            } else {
+                EditResult::Err(Error::TooMuchDepth($ref_name.level()))
+            }
+        }
+    };
+}
 
 
 
@@ -28,35 +71,19 @@ impl<Data> Tower<Data> {
 
 // IMPL: Editing
 //
-impl<Data: Clone> Tower<Data> {
-    pub fn extrude(&mut self, cell: ViewIndex, group: Data) -> Result<ViewIndex, Error> {
-        let cell = Self::valid_level(cell)?;
-
-        self.cells
-            .try_insert(cell + 1, group)
-            .map(|index| ViewIndex { index, depth: 0 })
-            .map_err(|_| Error::NoSuchCell(cell))
+impl<Data> Tower<Data> {
+    interaction! {
+        extrude(extract[sel: Selection], group: Data, _wrap: Data) => Extrude { group } => try_insert_after(group)
+        where if !is_bottom => CannotExtrudeNestedCells
     }
 
-    pub fn sprout(&mut self, cell: ViewIndex, group: Data) -> Result<ViewIndex, Error> {
-        let cell = Self::valid_level(cell)?;
-
-        self.cells
-            .try_insert(cell, group)
-            .map(|index| ViewIndex { index, depth: 0 })
-            .map_err(|_| Error::NoSuchCell(cell))
+    interaction! {
+        sprout(valid_level[index: ViewIndex], end: Data, _wrap: Data) => Sprout { group: index.clone() } => try_insert_before(end)
+        where if !is_end => CannotSproutGroup
     }
 
-    pub fn delete(&mut self, cell: ViewIndex) -> Result<Data, Error> {
-        let cell = Self::valid_level(cell)?;
-
-        let removed
-        = self.cells
-            .try_remove(cell)
-            .map_err(|_| Error::NoSuchCell(cell))?
-            .ok_or(Error::NoSuchCell(cell))?;
-
-        Ok(removed)
+    interaction! {
+        delete(valid_level[index: ViewIndex]) => Delete { cell } => try_remove()
     }
 }
 
