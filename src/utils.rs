@@ -4,6 +4,14 @@ macro_rules! fill {
 }
 
 #[macro_export]
+macro_rules! extract {
+    ( $val:expr => $($x:ident),* in $p:pat ) => {
+        if let $p = $val { ($($x),*) } else { unreachable![] }
+    };
+}
+
+
+#[macro_export]
 macro_rules! color {
     ( $r:expr , $g:expr , $b:expr ) => {
         iced::Color {
