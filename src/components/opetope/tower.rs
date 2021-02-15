@@ -167,17 +167,34 @@ impl<Data: Clone> Tower<Data> {
 // IMPL: Selections
 //
 impl<Data> Tower<data::Selectable<Data>> {
-    pub fn select(&mut self, cell: ViewIndex) -> Result<(), Error> {
-        if let ViewIndex { index, depth: 0 } = cell {
+    pub fn select(&mut self, cell: &ViewIndex) -> Result<Option<Selection>, Error> {
+        let index = Self::valid_level(cell)?;
+
+        let selected =
+        self.cells
+            .get_mut(index)
+            .map_err(|_| Error::NoSuchCell(cell.clone()))?
+            .selected();
+
+        self.unselect_all(0);
+
+        if !selected {
             self.cells
-                .get_mut(index).ok_or(Error::NoSuchCell(index))?
+                .get_mut(index)
+                .unwrap()
                 .select();
 
-            Ok(())
+            Ok(Some(Selection::Ground(index)))
 
         } else {
-            Err(Error::TooMuchDepth(cell.depth))
+            Ok(None)
         }
+    }
+
+    pub fn unselect_all(&mut self, _max_depth: usize) {
+        self.cells
+            .iter_mut()
+            .for_each(|cell| cell.unselect())
     }
 }
 
