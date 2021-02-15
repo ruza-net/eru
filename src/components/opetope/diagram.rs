@@ -1,4 +1,5 @@
-use super::*;
+use super::{ *, viewing::{ ViewIndex, Selection, Index } };
+
 use std::collections::HashSet;
 
 
@@ -32,22 +33,25 @@ macro_rules! dispatch_level {
 
 
 
-enum Site {
-    End { corresponding_group: index::prev::Cell },
-    Group { contents: Vec<index::local::Cell> },
+#[derive(Debug, Clone)]
+struct Face {
+    ends: Vec<ViewIndex>,
+    fill: ViewIndex,
 }
 
+#[derive(Debug, Clone)]
 pub struct MetaCell<Data> {
     data: Data,
+    face: Face,
 
-    site: Site,
+    content: Option<TracingVec<Self>>,
 }
 
 
+#[derive(Debug, Clone)]
 pub struct Diagram<Data> {
-    cells: VersionedVec<MetaCell<Data>>,
+    cells: TracingVec<MetaCell<Data>>,
 
-    level: usize,
     prev: Tail<Data>,
 }
 
@@ -63,8 +67,6 @@ impl<Data> Diagram<Data> {
         }
 
         Ok(Self {
-            level: tail.level() + 1,
-
             prev: tail,
             cells: fill![],
         })
@@ -74,12 +76,38 @@ impl<Data> Diagram<Data> {
 // IMPL: Accessing
 //
 impl<Data> Diagram<Data> {
-    pub fn get(&self, cell: index::local::Cell) -> Option<&MetaCell<Data>> {
-        self.cells.get(cell.inner())
+    pub fn level(&self) -> usize {
+        self.prev.level() + 1
     }
 
-    pub fn get_mut(&mut self, cell: index::local::Cell) -> Option<&mut MetaCell<Data>> {
-        self.cells.get_mut(cell.inner())
+    pub fn cell_count(&self) -> usize {
+        self.cells.len()
+    }
+
+    pub fn get(&self, path: &[TimelessIndex]) -> Option<&MetaCell<Data>> {
+        let mut acc =
+        self.cells
+            .get(*path.first()?)
+            .ok()?;
+
+        for &seg in &path[1..] {
+            acc = acc.get(seg)?;
+        }
+
+        Some(acc)
+    }
+
+    pub fn get_mut(&mut self, path: &[TimelessIndex]) -> Option<&mut MetaCell<Data>> {
+        let mut acc =
+        self.cells
+            .get_mut(*path.first()?)
+            .ok()?;
+
+        for &seg in &path[1..] {
+            acc = acc.get_mut(seg)?;
+        }
+
+        Some(acc)
     }
 
     pub fn has_groups(&self) -> bool {
@@ -88,98 +116,17 @@ impl<Data> Diagram<Data> {
             .iter()
             .any(|cell| cell.is_group())
     }
-
-    pub fn contents_of(&self, cell: index::local::Cell) -> Option<Vec<index::local::Cell>> {
-        self.get(cell)?
-            .site
-            .contents()
-            .map(|c| c.to_vec())
-    }
-
-    pub fn collective_inputs(&self, cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error> {
-        let cells = cells
-            .iter()
-            .map(|cell| cell.inner());
-
-        let outputs: HashSet<_> = cells.clone()
-            .map(|cell| self.output_of(cell).unwrap())
-            .collect();
-
-        Ok(cells
-            .map(|cell| self.inputs_of(cell).unwrap())
-            .flatten()
-            .filter(|input| !outputs.contains(input))
-            .collect())
-    }
-
-    pub fn common_output(&self, cells: &[index::local::Cell]) -> Result<index::prev::Cell, Error> {
-        let cells = cells
-            .iter()
-            .map(|cell| cell.inner());
-
-        let inputs: HashSet<_> = cells.clone()
-            .map(|cell| self.inputs_of(cell).unwrap())
-            .flatten()
-            .collect();
-
-        let outputs: Vec<_> = cells.clone()
-            .map(|cell| self.output_of(cell).unwrap())
-            .filter(|output| !inputs.contains(output))
-            .collect();
-
-        if let [common_out] = outputs[..] {
-            Ok(common_out)
-
-        } else {
-            Err(Error::CellsDoNotFormTree(cells.collect()))
-        }
-    }
-
-    fn inputs_of(&self, cell: Index) -> Option<Vec<index::prev::Cell>> {
-        let cell = self.cells.get(cell)?;
-
-        match &cell.site {
-            Site::End { corresponding_group } => Some(
-                self.prev
-                    .contents_of(corresponding_group.into_local())?
-                    .into_iter()
-                    .map(|idx| idx.into_prev())
-                    .collect()
-                ),
-
-            Site::Group { contents } => Some(
-                self.collective_inputs(contents).ok()?
-                    .into_iter()
-                    .collect()
-            ),
-        }
-    }
-
-    fn output_of(&self, cell: Index) -> Option<index::prev::Cell> {
-        let cell = self.cells.get(cell)?;
-
-        match &cell.site {
-            Site::End { corresponding_group } => Some(*corresponding_group),
-
-            Site::Group { contents } => self.common_output(contents).ok(),
-        }
-    }
 }
 
 // IMPL: Transforming
 //
 impl<Data> Diagram<Data> {
     pub fn into_next(self) -> Result<Diagram<Data>, Error> {
-        Diagram::new(Tail::Diagram(Box::new(self.is_rooted()?)))
-    }
-}
+        if let Ok(ret) = Self::new(Tail::Diagram(Box::new(self))) {
+            Ok(ret)
 
-// IMPL: Editing
-//
-impl<Data: Clone> Diagram<Data> {
-    dispatch_level! {
-        pub fn extrude(&mut self, { index, depth }: ViewIndex, group: Data) throws[EditResult::Err(Error::TooMuchDepth(depth))] -> EditResult<ViewIndex, Data> {
-            todo![]
+        } else {
+            todo!()
         }
     }
 }
@@ -187,76 +134,356 @@ impl<Data: Clone> Diagram<Data> {
 // IMPL: Utils
 //
 impl<Data> Diagram<Data> {
-    fn check_cells_form_tree(&self, cells: &[index::local::Cell]) -> Result<(), Error> {
-        todo![]
-    }
-
-    fn is_rooted(self) -> Result<Self, Error> {
-        todo![]
-    }
-
-    fn cell_inputs(&self) -> impl Iterator<Item = Vec<index::prev::Cell>> {
+    fn cell_with_end(&self, end: &ViewIndex) -> Option<TimedIndex> {
         self.cells
-            .indices()
-            .map(|cell| self.inputs_of(cell).unwrap())
-            .collect::<Vec<_>>()
-            .into_iter()
+            .iter_indices()
+            .filter(|(_, cell)| cell.face.ends.contains(end))
+            .map(|(index, _)| index)
+            .next()
     }
 
-    fn cell_outputs(&self) -> impl Iterator<Item = index::prev::Cell> {
+    fn cell_space_mut(&mut self, path: &[TimelessIndex]) -> &mut TracingVec<MetaCell<Data>> {
+        if self.get(path).is_some() {
+            let owner =
+            self.get_mut(path)
+                .unwrap();
+
+            owner
+                .content
+                    .as_mut()
+                    .unwrap()
+
+        } else {
+            &mut self.cells
+        }
+    }
+
+    fn all_inputs(&self) -> Vec<ViewIndex> {
+        let outputs: HashSet<_> =
         self.cells
-            .indices()
-            .map(|cell| self.output_of(cell).unwrap())
-            .collect::<Vec<_>>()
-            .into_iter()
-    }
+            .iter()
+            .map(|cell| &cell.face.fill)
+            .collect();
 
-    fn cell_indices(&self) -> impl Iterator<Item = ViewIndex> {
         self.cells
-            .indices()
-            .map(|index| ViewIndex { index, depth: self.level() })
-            .collect::<Vec<_>>()
-            .into_iter()
+            .iter()
+            .map(|cell| cell.face.ends.to_vec())
+            .flatten()
+            .filter(|input| !outputs.contains(input))
+            .collect()
     }
 
-    pub fn level(&self) -> usize {
-        self.level // NOTE: Can be replaced by `self.prev.level() + 1` to enable stabilization.
+    fn into_index(&self, path: Vec<TimelessIndex>) -> ViewIndex {
+        ViewIndex::Leveled {
+            level: self.level() - 1,
+
+            path,
+        }
+    }
+
+    fn check_form_tree<'c>(&self, cells: &'c [Vec<TimelessIndex>]) -> Result<(&'c [TimelessIndex], Vec<TimelessIndex>), Error> {
+        let ret = self.check_cells_connected(cells)?;
+
+        let inputs: HashSet<_> =
+        cells
+            .iter()
+            .map(|path| &self.get(path).unwrap().face.ends)
+            .flatten()
+            .collect();
+
+        let dangling =
+        cells
+            .iter()
+            .map(|path| &self.get(path).unwrap().face.fill)
+            .filter(|line| !inputs.contains(line))
+            .count();
+
+        if dangling == 1 {
+            Ok(ret)
+
+        } else {
+            Err(Error::CellsDoNotFormTree(
+                cells
+                    .iter()
+                    .cloned()
+                    .map(|path| self.into_index(path))
+                    .collect()
+            ))
+        }
+    }
+
+    fn check_cells_connected<'c>(&self, cells: &'c [Vec<TimelessIndex>]) -> Result<(&'c [TimelessIndex], Vec<TimelessIndex>), Error> {
+        let heads: Vec<_> =
+        cells
+            .iter()
+            .map(|path| path.last().unwrap())
+            .copied()
+            .collect();
+
+        let mut tails: Vec<_> =
+        cells
+            .iter()
+            .map(|path| &path[.. path.len() - 1])
+            .collect();
+
+        let tail =
+        tails
+            .pop()
+            .unwrap();
+
+        if tails
+            .into_iter()
+            .all(|tl| tail == tl)
+        {
+            Ok((tail, heads))
+
+        } else {
+            Err(Error::CannotGroupDisconnected(
+                cells
+                    .iter()
+                    .cloned()
+                    .map(|path| self.into_index(path))
+                    .collect()
+            ))
+        }
+    }
+
+    pub fn contents_of(&self, cell: &[TimelessIndex]) -> Option<Vec<ViewIndex>> {
+        self.get(cell)
+            .map(|cell| cell.content.as_ref())
+            .flatten()
+            .map(|tr_vec|
+                tr_vec
+                    .timeless_indices()
+                    .map(|index| self.into_index({
+                        let mut path = cell.to_vec();
+                        path.push(index);
+
+                        path
+                    }))
+                    .collect()
+            )
+    }
+
+    pub fn is_end(&self, cell: &ViewIndex) -> Result<bool, Error> {
+        let path = self.valid_level(cell)?;
+
+        Ok(
+            self.get(&path)
+                .ok_or(Error::NoSuchCell(cell.clone()))?
+                .content
+                .is_none()
+        )
+    }
+
+    fn valid_level(&self, index: &ViewIndex) -> Result<Vec<TimelessIndex>, Error> {
+        if self.level() == index.level() {
+            Ok(index.path())
+
+        } else {
+            Err(Error::TooMuchDepth(index.level()))
+        }
+    }
+}
+
+impl<Data: Clone> Diagram<Data> {
+    pub fn deep_copy(&self, level: usize) -> Result<Tail<Data>, Error> {
+        if self.level() == level {
+            Ok(Tail::Diagram(Box::new(self.clone())))
+
+        } else {
+            self.prev.deep_copy(level - 1)
+        }
     }
 }
 
 // IMPL: Selections
 //
 impl<Data> Diagram<data::Selectable<Data>> {
-    dispatch_level! {
-        pub fn select(&mut self, { index, depth }: ViewIndex) throws[Err(Error::TooMuchDepth(depth))] -> Result<(), Error> {
-            let cell = self.get_mut(index::local::Cell(index)).ok_or(Error::NoSuchCell(index))?;
+    pub fn select(&mut self, cell: &ViewIndex) -> Result<Option<Selection>, Error> {
+        if self.level() == cell.level() {
+            self.prev.unselect_all(0);
 
-            cell.data.select();
+            if let Some(selection) = self.selected_cells() {
+                if selection.common_path() != cell.tail() {
+                    self.unselect_all(self.level());
+                }
+            }
 
-            Ok(())
+            let cell =
+            self
+                .get_mut(&cell.path())
+                .ok_or(Error::NoSuchCell(cell.clone()))?;
 
+            cell.data
+                .select();
+
+            Ok(self.selected_cells())
+
+        } else if self.level() > cell.level() {
+            self.unselect_all(self.level());
+
+            self.prev
+                .select(cell)
+
+        } else {
+            Err(Error::TooMuchDepth(cell.level()))
         }
+    }
+
+    pub fn unselect_all(&mut self, max_depth: usize) {
+        if max_depth < self.level() {
+            self.prev.unselect_all(max_depth);
+        }
+
+        self.cells
+            .iter_mut()
+            .for_each(|cell| cell.unselect_all())
+    }
+
+    fn selected_cells(&self) -> Option<Selection> {
+        let all_selected =
+        self.cells
+            .iter_timeless_indices()
+            .map(|(index, cell)| {
+                cell.selected_cells()
+                    .into_iter()
+                    .map(move |mut path| {
+                        path.insert(0, index.clone());
+                        path
+                    })
+            })
+            .fold(vec![], |mut acc, paths|
+            {
+                acc.extend(paths);
+
+                acc
+            });
+
+        let first = all_selected.first()?;
+
+        let path = first[.. first.len() - 1].to_vec();
+        let level = self.level() - 1;
+
+        assert![all_selected.iter().all(|p| path == p[.. p.len() - 1])];
+
+        let cells =
+        all_selected
+            .into_iter()
+            .map(|mut path| path.pop().unwrap())
+            .collect();
+
+        Some(Selection::Leveled {
+            level,
+            path,
+            cells,
+        })
     }
 }
 
 
+// IMPL: Accessing
+//
 impl<Data> MetaCell<Data> {
     fn is_group(&self) -> bool {
-        self.site.is_group()
+        self.content.is_some()
+    }
+
+    fn get(&self, seg: TimelessIndex) -> Option<&Self> {
+        self.content
+            .as_ref()?
+            .get(seg)
+            .ok()
+    }
+
+    fn get_mut(&mut self, seg: TimelessIndex) -> Option<&mut Self> {
+        self.content
+            .as_mut()?
+            .get_mut(seg)
+            .ok()
     }
 }
 
-impl Site {
-    fn is_group(&self) -> bool {
-        match self {
-            Self::End { .. } => false,
-            Self::Group { .. } => true,
+// IMPL: Selections
+//
+impl<Data> MetaCell<data::Selectable<Data>> {
+    fn unselect_all(&mut self) {
+        self.data.unselect();
+
+        if let Some(content) = &mut self.content {
+            content
+                .iter_mut()
+                .for_each(|cell| cell.unselect_all())
         }
     }
-    fn contents(&self) -> Option<&[index::local::Cell]> {
-        match self {
-            Self::End { .. } => None,
-            Self::Group { contents } => Some(contents),
+
+    fn selected(&self) -> bool {
+        self.data.selected()
+    }
+
+    fn selected_cells(&self) -> Vec<Vec<TimelessIndex>> {
+        if self.selected() {
+            vec![vec![]]
+
+        } else if let Some(cells) = &self.content {
+            cells
+                .iter_timeless_indices()
+                .map(|(index, cell)| (index, cell.selected_cells()))
+                .fold(vec![], |mut acc, (index, selected)|
+                {
+                    acc.extend(
+                        selected
+                            .into_iter()
+                            .map(|mut sl| { &mut sl.insert(0, index); sl })
+                    );
+
+                    acc
+                })
+
+        } else {
+            vec![]
+        }
+    }
+}
+
+impl Face {
+    fn collect<'c>(cells: impl Iterator<Item = &'c Self>) -> Self {
+        let mut ends = vec![];
+        let mut fills = vec![];
+
+        for cell in cells {
+            ends.extend(cell.ends.iter());
+
+            fills.push(&cell.fill);
+        }
+
+        fills =
+        fills
+            .into_iter()
+            .filter(|fill| {
+                if let Some(pos) = ends.iter().position(|end| end == fill) {
+                    ends.remove(pos);
+
+                    false
+
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        if let [fill] = fills[..] {
+            let ends =
+            ends.into_iter()
+                .cloned()
+                .collect();
+
+            let fill = fill.clone();
+
+            Face { ends, fill }
+
+        } else {
+            unreachable![]
         }
     }
 }

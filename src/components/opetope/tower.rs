@@ -1,9 +1,12 @@
-use super::{ *, viewing::ViewIndex };
+use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
 
 
+
+
+#[derive(Debug, Clone)]
 pub struct Tower<Data> {
-    cells: VersionedVec<Data>,
+    cells: TracingVec<Data>,
 }
 
 
@@ -12,10 +15,10 @@ pub struct Tower<Data> {
 //
 impl<Data> Tower<Data> {
     pub fn init(root: Data) -> (ViewIndex, Self) {
-        let index = unsafe { Index::from_raw_parts(0, 0) };
+        let index = unsafe { TimelessIndex::from_raw_parts(0) };
 
         (
-            ViewIndex { index, depth: 0 },
+            ViewIndex::Ground(index),
             Self {
                 cells: vec![root].into(),
             },
@@ -72,38 +75,59 @@ impl<Data> Tower<Data> {
         self.cells.len() > 1
     }
 
-    pub fn contents_of(&self, cell: index::local::Cell) -> Option<Vec<index::local::Cell>> {
-        let up_cell = cell.inner() - 1;
+    pub fn is_end(&self, cell: &ViewIndex) -> Result<bool, Error> {
+        let index = Self::valid_level(cell)?;
 
-        if self.cells.contains(up_cell) {
-            Some(vec![index::local::Cell(up_cell)])
+        let index =
+        self.cells
+            .into_timed(index)
+            .map_err(|_| Error::NoSuchCell(cell.clone()))?;
 
-        } else {
-            None
-        }
+        Ok(
+            self.cells
+                .try_first_index()
+                .map(|first| first == index)
+                .unwrap_or(false)
+        )
     }
 
-    pub fn common_output(&self, cells: &[index::local::Cell]) -> Result<index::prev::Cell, Error> {
-        Err(Error::CellsDoNotHaveOutput(cells
-            .iter()
-            .map(|cell| cell.inner())
-            .collect()
-        ))
+    pub fn is_bottom(&self, cells: &Selection) -> Result<bool, Error> {
+        let index = Self::valid_level(cells)?;
+
+        let index =
+        self.cells
+            .into_timed(index)
+            .map_err(|_| Error::NoSuchCell(ViewIndex::Ground(index)))?;
+
+        Ok(
+            self.cells
+                .last_index()
+                .map(|last| last == index)
+                .unwrap_or(false)
+        )
     }
 
-    pub fn collective_inputs(&self, cells: &[index::local::Cell]) -> Result<Vec<index::prev::Cell>, Error> {
-        let bad = cells
-            .iter()
-            .filter(|cell| !self.cells.contains(cell.inner()))
-            .map(|cell| cell.inner())
-            .next();
+    pub fn is_middle(&self, cell: &Selection) -> Result<bool, Error> {
+        // Ok(!(self.is_end(cell)? || self.is_bottom(cell)?))
 
-        if let Some(bad) = bad {
-            Err(Error::NoSuchCell(bad))
+        todo!()
+    }
 
-        } else {
-            Ok(vec![])
-        }
+    pub fn contents_of(&self, index: &[TimelessIndex]) -> Option<Vec<ViewIndex>> {
+        let index = if let &[index] = index { index } else { None? };
+
+        let timed =
+        self.cells
+            .into_timed(index)
+            .ok()?;
+
+        Some(
+            self.cells
+                .into_timeless(timed - 1)
+                .map(ViewIndex::Ground)
+                .map(|index| vec![index])
+                .unwrap_or(vec![])
+        )
     }
 }
 
@@ -112,14 +136,20 @@ impl<Data> Tower<Data> {
 impl<Data> Tower<Data> {
     pub fn level(&self) -> usize {
         0
+    fn extract(sel: &Selection) -> Result<TimelessIndex, Error> {
+        sel .as_ground()
+            .ok_or(Error::TooMuchDepth(sel.level()))
     }
 
-    fn valid_level(cell: ViewIndex) -> Result<Index, Error> {
-        if let ViewIndex { index, depth: 0 } = cell {
+    fn valid_level(cell: &dyn super::viewing::Index) -> Result<TimelessIndex, Error> {
+        if let Some(index) = cell.as_ground() {
             Ok(index)
 
         } else {
-            Err(Error::TooMuchDepth(cell.depth))
+            Err(Error::TooMuchDepth(cell.level()))
+        }
+    }
+}
         }
     }
 }
@@ -151,13 +181,13 @@ pub mod viewing {
 
 
     impl<Data> Tower<data::Selectable<Data>>
-    where Data: SimpleView {
-
+    where Data: SimpleView
+    {
         pub fn view(&mut self) -> iced::Element<Message> {
             let mut tower = self
                 .cells
-                .iter_mut_indices()
-                .map(|(index, data)| (ViewIndex { index, depth: 0 }, data));
+                .iter_mut_timeless_indices()
+                .map(|(index, data)| (ViewIndex::Ground(index), data));
 
             let (top_idx, top_data) = tower.next().unwrap();
 
