@@ -27,7 +27,7 @@ enum Data {
 pub struct Icon {
     data: Data,
 
-    color: Color,
+    pub color: Color,
 }
 
 
@@ -106,8 +106,5 @@ impl Icon {
                 txt.into()
             },
         }
-    }
-    pub fn color(&self) -> Color {
-        self.color
     }
 }

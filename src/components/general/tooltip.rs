@@ -56,6 +56,10 @@ impl<Msg> Tooltip<Msg> {
         self.on_press = Some(msg);
         self
     }
+
+    pub fn color_mut(&mut self) -> &mut iced::Color {
+        &mut self.icon.color
+    }
 }
 
 impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
@@ -66,7 +70,7 @@ impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
                 self.icon.view(size)
                     .map(|_| fill![]),
             )
-            .style(crate::styles::container::Style::cell(self.icon.color()));
+            .style(crate::styles::container::Style::cell(self.icon.color));
 
         if let Some(size) = size {
             btn = btn

@@ -1,6 +1,4 @@
-use crate::components::{
-    general::Tooltip,
-};
+use crate::components::general::Tooltip;
 
 use crate::styles::container;
 
