@@ -64,7 +64,7 @@ pub mod style {
     impl container::StyleSheet for Default {
         fn style(&self) -> container::Style {
             container::Style {
-                background: Some(color![ BG_SHADE; BG_SHADE; BG_SHADE ].into()),
+                background: Some(color![ BG_SHADE, BG_SHADE, BG_SHADE ].into()),
 
                 ..fill![]
             }

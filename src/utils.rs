@@ -5,7 +5,7 @@ macro_rules! fill {
 
 #[macro_export]
 macro_rules! color {
-    ( $r:expr ; $g:expr ; $b:expr ) => {
+    ( $r:expr , $g:expr , $b:expr ) => {
         iced::Color {
             r: $r as f32 / 255.,
             g: $g as f32 / 255.,

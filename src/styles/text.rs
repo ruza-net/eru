@@ -25,6 +25,6 @@ pub mod sizes {
 
 
 pub mod colors {
-    pub const PRIMARY: iced::Color = color![45.; 71.; 149.];
-    pub const SECONDARY: iced::Color = color![83.; 98.; 140.];
+    pub const PRIMARY: iced::Color = color![45., 71., 149.];
+    pub const SECONDARY: iced::Color = color![83., 98., 140.];
 }

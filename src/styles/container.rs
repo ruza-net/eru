@@ -16,7 +16,7 @@ pub mod color {
     pub const DESATURATE_PERCENT: f64 = 0.85;
     pub const LIGHTEN_PERCENT: f64 = 3.0;
 
-    pub const SELECTED: iced::Color = color![255; 154; 97];
+    pub const SELECTED: iced::Color = color![255, 154, 97];
 }
 
 pub const PADDING: u16 = 8;
