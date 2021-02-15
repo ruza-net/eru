@@ -16,6 +16,7 @@ pub use index::{ Index, IndexError };
 /// by indices enriched by pseudotimes. The pseudotimes determine a version of the vector which
 /// is then searched for the given location.
 ///
+#[derive(Debug, Clone, PartialEq)]
 pub struct VersionedVec<X> {
     versions: Vec<Vec<X>>,
 }
@@ -187,7 +188,7 @@ impl<X> VersionedVec<X> {
     fn to_absolute(&self, index: Index) -> Result<usize, IndexError> {
         let Index { pos, pseudotime } = index;
 
-        if pseudotime < self.versions.len() - 1 {
+        if pseudotime < self.pseudotime() {
             Err(IndexError::AccessToVersionIsRestricted(index))
 
         } else if pseudotime >= self.versions.len() {
