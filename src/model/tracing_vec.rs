@@ -441,12 +441,6 @@ impl<X> TracingVec<X> {
 // IMPL: Utils
 //
 impl<X> TracingVec<X> {
-    pub fn tmp_mem(&self) -> &[usize] {
-        self.snapshots
-            .last()
-            .unwrap()
-    }
-
     fn pseudotime(&self) -> usize {
         self.snapshots.len() - 1
     }
