@@ -10,7 +10,7 @@ pub mod index {
 
 
         #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) viewing::ViewIndex);
+        pub struct Cell(pub(in super::super) ViewIndex);
 
         impl Cell {
             pub fn into_prev(self) -> super::prev::Cell {
@@ -18,8 +18,8 @@ pub mod index {
             }
         }
 
-        impl From<viewing::ViewIndex> for Cell {
-            fn from(addr: viewing::ViewIndex) -> Self {
+        impl From<ViewIndex> for Cell {
+            fn from(addr: ViewIndex) -> Self {
                 Self(addr)
             }
         }
@@ -29,7 +29,7 @@ pub mod index {
         use super::*;
 
         #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) viewing::ViewIndex);
+        pub struct Cell(pub(in super::super) ViewIndex);
 
         impl Cell {
             pub fn into_local(self) -> super::local::Cell {
@@ -37,8 +37,8 @@ pub mod index {
             }
         }
 
-        impl From<viewing::ViewIndex> for Cell {
-            fn from(addr: viewing::ViewIndex) -> Self {
+        impl From<ViewIndex> for Cell {
+            fn from(addr: ViewIndex) -> Self {
                 Self(addr)
             }
         }
@@ -61,13 +61,13 @@ pub enum Error {
     TooMuchDepth(usize),
     CannotEditInner(usize),
 
-    NoSuchCell(viewing::ViewIndex),
-    CannotSproutGroup(viewing::ViewIndex),
+    NoSuchCell(ViewIndex),
+    CannotSproutGroup(ViewIndex),
     CannotExtrudeNestedCells(viewing::Selection),
 
-    CannotGroupDisconnected(Vec<viewing::ViewIndex>),
+    CannotGroupDisconnected(Vec<ViewIndex>),
 
-    CellsDoNotFormTree(Vec<viewing::ViewIndex>),
+    CellsDoNotFormTree(Vec<ViewIndex>),
     CellsDoNotHaveOutput(Vec<TimelessIndex>),
 
     NoLayerBeneath,
@@ -90,16 +90,16 @@ pub enum EditResult<O, Data> {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Action {
-    Extrude { group: viewing::ViewIndex },
-    Sprout { group: viewing::ViewIndex },
-    Delete { cell: viewing::ViewIndex },
+    Extrude { group: ViewIndex },
+    Sprout { group: ViewIndex },
+    Delete { cell: ViewIndex },
 
     // NOTE: Split is represented by two actions.
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Interaction {
-    InPrevious { action: Action, wrap: viewing::ViewIndex },
+    InPrevious { action: Action, wrap: ViewIndex },
 
     Here { action: Action },
 }
@@ -129,8 +129,8 @@ impl<Data> Tail<Data> {
 
         has_groups() -> bool,
 
-        is_end(cell: &viewing::ViewIndex) -> Result<bool, Error>,
-        contents_of(index: &[TimelessIndex]) -> Option<Vec<viewing::ViewIndex>>
+        is_end(cell: &ViewIndex) -> Result<bool, Error>,
+        contents_of(index: &[TimelessIndex]) -> Option<Vec<ViewIndex>>
     }
 }
 
@@ -153,7 +153,7 @@ impl<Data: SimpleView> Tail<data::Selectable<Data>> {
 impl<Data: Clone> Tail<Data> {
     common_methods! {
         [mut] extrude(cell: &viewing::Selection, group: Data, wrap: Data) -> EditResult<Interaction, Data>,
-        [mut] sprout(cell: &viewing::ViewIndex, end: Data, wrap: Data) -> EditResult<Interaction, Data>
+        [mut] sprout(cell: &ViewIndex, end: Data, wrap: Data) -> EditResult<Interaction, Data>
     }
 }
 
@@ -161,7 +161,7 @@ impl<Data: Clone> Tail<Data> {
 //
 impl<Data> Tail<data::Selectable<Data>> {
     common_methods! {
-        [mut] select(cell: &viewing::ViewIndex) -> Result<Option<viewing::Selection>, Error>,
+        [mut] select(cell: &ViewIndex) -> Result<Option<viewing::Selection>, Error>,
         [mut] unselect_all(max_depth: usize)
     }
 }
@@ -215,7 +215,7 @@ impl<O, Data> From<Result<O, Error>> for EditResult<O, Data> {
 }
 
 
-
+pub use viewing::{ Message, ViewIndex, Selection };
 pub mod viewing {
     use super::*;
     use std::fmt;
@@ -266,6 +266,27 @@ pub mod viewing {
     // IMPL: Accessing
     //
     impl Selection {
+        pub fn as_cells(&self) -> Vec<ViewIndex> {
+            match self {
+                Selection::Ground(idx) => vec![ViewIndex::Ground(*idx)],
+
+                Selection::Leveled { level, path, cells } => {
+                    let level = *level;
+
+                    cells
+                        .iter()
+                        .cloned()
+                        .map(|cell| {
+                            let mut path = path.clone();
+                            path.push(cell);
+
+                            ViewIndex::Leveled { level, path }
+                        })
+                        .collect()
+                }
+            }
+        }
+
         pub fn common_path(&self) -> Vec<TimelessIndex> {
             match self {
                 Self::Ground(_) => vec![],

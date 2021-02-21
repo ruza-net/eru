@@ -11,7 +11,9 @@ pub struct Sidebar {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    FreshWorkspace,
+    Extrude,
+    Sprout,
+    Pass,
 }
 
 impl Default for Message {
@@ -24,12 +26,20 @@ impl Default for Message {
 
 impl Default for Sidebar {
     fn default() -> Self {
-        let mut new_workspace = Tooltip::from_file("res/img/plus");
-        new_workspace.on_press(Message::FreshWorkspace);
+        let mut extrude = Tooltip::from_file("res/img/plus");
+        extrude.on_press(Message::Extrude);
+
+        let mut sprout = Tooltip::from_file("res/img/plus");
+        *sprout.color_mut() = color![207, 205, 14];
+        sprout.on_press(Message::Sprout);
+
+        let mut pass = Tooltip::from_file("res/img/plus");
+        *pass.color_mut() = color![29, 129, 179];
+        pass.on_press(Message::Pass);
 
         Self {
             width: style::WIDTH,
-            tools: vec![new_workspace],
+            tools: vec![extrude, sprout, pass],
         }
     }
 }

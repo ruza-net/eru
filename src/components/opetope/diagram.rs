@@ -472,7 +472,7 @@ impl<Data> Diagram<data::Selectable<Data>> {
                 .ok_or(Error::NoSuchCell(cell.clone()))?;
 
             cell.data
-                .select();
+                .select();// TODO: Select all cells between `cell` and the boundary of `self.selected_cells()`.
 
             Ok(self.selected_cells())
 
