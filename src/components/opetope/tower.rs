@@ -4,7 +4,7 @@ use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 macro_rules! interaction {
     (
         $name:ident ( $verify:ident [$ref_name:ident : $ref_ty:ty] $(, $arg:ident : $arg_ty:ty)* )
-        => $action:ident { $field:ident $(: $override:expr)? }
+        => $action:ident { $($field:ident $(: $override:expr)?),* }
         => $method:ident ( $($call_arg:ident),* )
         $(where if !$invariant:ident => $err:ident)?
     ) => {
@@ -29,9 +29,9 @@ macro_rules! interaction {
                     .map(ViewIndex::Ground)
                     .map_err(move |e| Error::IndexError(e))
                 {
-                    Ok($field) =>
+                    Ok(( $($field),* )) =>
                         EditResult::Ok(Interaction::Here {
-                            action: Action::$action { $field $(: $override)? },
+                            action: Action::$action { $($field $(: $override)?),* },
                         }),
 
                     Err(e) =>
