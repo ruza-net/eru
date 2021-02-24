@@ -204,6 +204,22 @@ impl<O, Data> EditResult<O, Data> {
 
         self
     }
+
+    pub fn and_then<U>(self, op: impl FnOnce(O, Option<Tail<Data>>) -> EditResult<U, Data>) -> EditResult<U, Data> {
+        match self {
+            EditResult::Ok(result) => op(result, None),
+            EditResult::OkCopied { result, copy } => op(result, Some(copy)),
+            EditResult::Err(err) => EditResult::Err(err),
+        }
+    }
+
+    pub fn or_else(self, op: impl FnOnce(Error) -> Self) -> Self {
+        match self {
+            EditResult::Ok(result) => EditResult::Ok(result),
+            EditResult::OkCopied { result, copy } => EditResult::OkCopied { result, copy },
+            EditResult::Err(err) => op(err),
+        }
+    }
 }
 
 impl<O, Data> From<Result<O, Error>> for EditResult<O, Data> {
