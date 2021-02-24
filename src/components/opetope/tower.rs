@@ -3,15 +3,15 @@ use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
 macro_rules! interaction {
     (
-        $name:ident ( $verify:ident [$ref_name:ident : $ref_ty:ty] $(, $arg:ident : $arg_ty:ty)* )
-        => $action:ident { $($field:ident $(: $override:expr)?),* }
+        $self:ident . $name:ident ( $verify:ident [$ref_name:ident : $ref_ty:ty] $(, $arg:ident : $arg_ty:ty)* )
+        => $action:ident { $field:ident $(: $override:expr)? $(, $rest:ident $(: $r_override:expr)?)* }
         => $method:ident ( $($call_arg:ident),* )
         $(where if !$invariant:ident => $err:ident)?
     ) => {
-        pub fn $name(&mut self, $ref_name: & $ref_ty $(, $arg: $arg_ty)*) -> EditResult<Interaction, Data> {
+        pub fn $name(&mut $self, $ref_name: & $ref_ty $(, $arg: $arg_ty)*) -> EditResult<Interaction, Data> {
             if let Ok(index) = Self::$verify($ref_name) {
                 $(
-                    match self.$invariant($ref_name) {
+                    match $self.$invariant($ref_name) {
                         Ok($invariant) =>
                             if !$invariant {
                                 return EditResult::Err(Error::$err($ref_name.clone()));
@@ -22,16 +22,16 @@ macro_rules! interaction {
                 )?
 
                 match
-                self
+                $self
                     .cells
                     .$method(index $(, $call_arg)*)
                     .map(|timed| self.cells.into_timeless(timed).unwrap())
                     .map(ViewIndex::Ground)
-                    .map_err(move |e| Error::IndexError(e))
+                    .map_err(|e| Error::IndexError(e))
                 {
-                    Ok(( $($field),* )) =>
+                    Ok($field) =>
                         EditResult::Ok(Interaction::Here {
-                            action: Action::$action { $($field $(: $override)?),* },
+                            action: Action::$action { $($rest $(: $r_override)?, )* $field $(: $override)? },
                         }),
 
                     Err(e) =>
@@ -58,12 +58,13 @@ pub struct Tower<Data> {
 //
 impl<Data> Tower<Data> {
     pub fn init(root: Data) -> (ViewIndex, Self) {
-        let index = unsafe { TimelessIndex::from_raw_parts(0) };
+        let cells = TracingVec::from(vec![root]);
+        let index = cells.first_index();
 
         (
             ViewIndex::Ground(index),
             Self {
-                cells: vec![root].into(),
+                cells,
             },
         )
     }
@@ -73,17 +74,25 @@ impl<Data> Tower<Data> {
 //
 impl<Data> Tower<Data> {
     interaction! {
-        extrude(extract[sel: Selection], group: Data, _wrap: Data) => Extrude { group } => try_insert_after(group)
+        self.extrude(extract[sel: Selection], group: Data, _wrap: Data)
+            => Extrude { group, contents: self.contents_of(&group.path()).unwrap() }
+            => try_insert_after(group)
+
         where if !is_bottom => CannotExtrudeNestedCells
     }
 
     interaction! {
-        sprout(valid_level[index: ViewIndex], end: Data, _wrap: Data) => Sprout { group: index.clone() } => try_insert_before(end)
+        self.sprout(valid_level[index: ViewIndex], end: Data, _wrap: Data)
+            => Sprout { end, group: index.clone() }
+            => try_insert_before(end)
+
         where if !is_end => CannotSproutGroup
     }
 
     interaction! {
-        delete(valid_level[index: ViewIndex]) => Delete { cell } => try_remove()
+        self.delete(valid_level[index: ViewIndex])
+            => Delete { cell }
+            => try_remove()
     }
 }
 

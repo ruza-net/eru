@@ -62,7 +62,6 @@ pub struct Diagram<Data> {
 //
 impl<Data> Diagram<Data> {
     pub fn new(tail: Tail<Data>) -> Result<Self, Error> {
-
         if tail.has_groups() {
             return Err(Error::CannotConvertAlreadyGrouped);
         }
@@ -135,33 +134,41 @@ impl<Data> Diagram<Data> {
 // IMPL: Editing
 //
 impl<Data: Clone> Diagram<Data> {
-    interaction!{ extrude(&mut self, cell: &Selection, group: Data, wrap: Data)
+    interaction!{ extrude(&mut self, cells: &Selection, group: Data, wrap: Data)
         in prev {
             self
                 .prev
-                .extrude(cell, group, wrap.clone())
+                .extrude(cells, group, wrap.clone())
                 .map(|inter| {
-                    let fill = extract![inter => group in Interaction::Here { action: Action::Extrude { group } }];
+                    let (fill, ends) = extract![inter => group, contents in Interaction::Here { action: Action::Extrude { group, contents } }];
+
+                    cells
+                        .as_cells()
+                        .iter()
+                        .zip(ends.iter())
+                        .for_each(|(cell, end)| {
+                            self.replace_line(cell, end).unwrap()
+                        });
 
                     let wrap = self.wrap(wrap, fill.clone());
 
                     Interaction::InPrevious {
                         wrap,
-                        action: Action::Extrude { group: fill },
+                        action: Action::Extrude { group: fill, contents: ends },
                     }
                 })
                 .into()
         }
 
         in self {
-            if cell.common_path().len() > 1 {
-                return EditResult::Err(Error::CannotExtrudeNestedCells(cell.clone()));
+            if cells.common_path().len() > 1 {
+                return EditResult::Err(Error::CannotExtrudeNestedCells(cells.clone()));
             }
 
-            match self.group(&cell.as_paths(), group) {
-                Ok(group) =>
+            match self.group(&cells.as_paths(), group) {
+                Ok((group, contents)) =>
                     EditResult::Ok(Interaction::Here {
-                        action: Action::Extrude { group },
+                        action: Action::Extrude { group, contents },
                     }),
 
                 Err(e) => EditResult::Err(e),
@@ -175,13 +182,13 @@ impl<Data: Clone> Diagram<Data> {
                 .prev
                 .sprout(index, end, wrap.clone())
                 .map(|inter| {
-                    let fill = extract![inter => group in Interaction::Here { action: Action::Sprout { group } }];
+                    let (fill, end) = extract![inter => group, end in Interaction::Here { action: Action::Sprout { group, end } }];
 
                     let wrap = self.wrap(wrap, fill.clone());
 
                     Interaction::InPrevious {
                         wrap,
-                        action: Action::Sprout { group: fill },
+                        action: Action::Sprout { group: fill, end },
                     }
                 })
                 .into()
@@ -207,10 +214,20 @@ impl<Data: Clone> Diagram<Data> {
                     content: None,
                 };
 
-                cell.content = Some(TracingVec::from(vec![end]));
+                let content = TracingVec::from(vec![end]);
+                let innermost_index = content.first_index();
+
+                cell.content = Some(content);
+
+                let mut path = index.path();
+
+                path.push(innermost_index);
+
+                let level = self.level() - 1;
+                let groupings = vec![path];
 
                 EditResult::Ok(Interaction::Here {
-                    action: Action::Sprout { group: index.clone() },
+                    action: Action::Sprout { group: index.clone(), end: ViewIndex::Leveled { level, groupings } },
                 })
 
             } else {
@@ -315,7 +332,7 @@ impl<Data> Diagram<Data> {
     }
 
     fn all_inputs(&self) -> Vec<ViewIndex> {
-        let outputs: HashSet<_> =
+        let outputs: Vec<_> =
         self.cells
             .iter()
             .map(|cell| &cell.face.fill)
@@ -325,7 +342,7 @@ impl<Data> Diagram<Data> {
             .iter()
             .map(|cell| cell.face.ends.to_vec())
             .flatten()
-            .filter(|input| !outputs.contains(input))
+            .filter(|input| !outputs.contains(&input))
             .collect()
     }
 
@@ -340,7 +357,7 @@ impl<Data> Diagram<Data> {
     fn check_form_tree<'c>(&self, cells: &'c [Vec<TimelessIndex>]) -> Result<(&'c [TimelessIndex], Vec<TimelessIndex>), Error> {
         let ret = self.check_cells_connected(cells)?;
 
-        let inputs: HashSet<_> =
+        let inputs: Vec<_> =
         cells
             .iter()
             .map(|path| &self.get(path).unwrap().face.ends)
@@ -560,6 +577,30 @@ impl<Data> MetaCell<Data> {
     }
 }
 
+// IMPL: Utils
+//
+impl<Data> MetaCell<Data> {
+    fn replace_line(&mut self, line: &ViewIndex, new: &ViewIndex) -> Result<(), Error> {
+        if let Some(content) = &mut self.content {
+            for cell in content.iter_mut() {
+                if cell.face.fill == *line {
+                    cell.face.fill = new.clone();
+                }
+
+                cell.face
+                    .ends
+                    .iter_mut()
+                    .filter(|end| **end == *line)
+                    .for_each(|end| *end = new.clone());
+
+                cell.replace_line(line, new)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 // IMPL: Selections
 //
 impl<Data> MetaCell<data::Selectable<Data>> {
@@ -709,7 +750,7 @@ pub mod viewing {
                     //
                     let is_connected =
                     if let Some((_, cell)) = cells.last() {
-                        &this_cell.face.ends[i] == &cell.face.fill
+                        this_cell.face.ends[i] == cell.face.fill
 
                     } else {
                         false
