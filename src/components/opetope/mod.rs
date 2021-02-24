@@ -90,8 +90,8 @@ pub enum EditResult<O, Data> {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Action {
-    Extrude { group: ViewIndex },
-    Sprout { group: ViewIndex },
+    Extrude { group: ViewIndex, contents: Vec<ViewIndex> },
+    Sprout { group: ViewIndex, end: ViewIndex },
     Delete { cell: ViewIndex },
 
     // NOTE: Split is represented by two actions.

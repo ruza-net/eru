@@ -156,7 +156,9 @@ impl<X> TracingVec<X> {
     pub fn try_replace(&mut self, indices: Vec<impl Into<TracingIndex>>, val: X) -> Result<Vec<TimelessIndex>, IndexError> {
         let (first, removed) = self.try_remove_all(indices)?;
 
-        self.mem.push(val.into());
+        let birth = self.pseudotime();
+
+        self.mem.push(Trace { val, birth });
         let tracing_index = self.last_obj_index();
 
         self.snapshots
@@ -199,8 +201,12 @@ impl<X> TracingVec<X> {
         Ok((first, removed.into_iter().map(Option::unwrap).collect()))
     }
 
+    // NOTE: Returns the newly added index.
+    //
     fn try_insert(&mut self, absolute_index: usize, val: X) -> Result<TimedIndex, IndexError> {
-        self.mem.push(val.into());
+        let birth = self.pseudotime() + 1;
+
+        self.mem.push(Trace { val, birth });
 
         let tracing_index = self.last_obj_index();
 
@@ -208,7 +214,7 @@ impl<X> TracingVec<X> {
             .insert(absolute_index, tracing_index);
 
         let pos = absolute_index;
-        let pseudotime = self.pseudotime();
+        let pseudotime = birth;
 
         Ok(TimedIndex { pos, pseudotime })
     }
@@ -234,8 +240,9 @@ impl<X: Clone> TracingVec<X> {
             .collect();
 
         let val = f(removed);
+        let birth = self.pseudotime();
 
-        self.mem.push(val.into());
+        self.mem.push(Trace { val, birth });
         let tracing_index = self.last_obj_index();
 
         self.snapshots
@@ -244,7 +251,7 @@ impl<X: Clone> TracingVec<X> {
             .insert(first, tracing_index);
 
         let pos = first;
-        let pseudotime = self.pseudotime();
+        let pseudotime = birth;
 
         Ok(TimedIndex { pos, pseudotime })
     }
@@ -261,6 +268,7 @@ impl<X> TracingVec<X> {
             .map(|&pos| &self.mem[pos].val)
             .collect()
     }
+
 
     pub fn latest(&self) -> Vec<&X> {
         self.snapshots
@@ -299,6 +307,11 @@ impl<X> TracingVec<X> {
         ret
     }
 
+
+    pub fn first_index(&self) -> TimedIndex {
+        self.try_first_index().unwrap()
+    }
+
     pub fn try_first_index(&self) -> Option<TimedIndex> {
         let v = self.latest();
 
@@ -306,38 +319,29 @@ impl<X> TracingVec<X> {
             None
 
         } else {
-            Some(self.first_index())
+            let pseudotime = self.pseudotime();
+            let pos = 0;
+
+            Some(TimedIndex { pseudotime, pos })
         }
     }
 
-    pub fn first_index(&self) -> TimedIndex {
-        TimedIndex {
-            pos: 0,
-            pseudotime: self.pseudotime(),
-        }
+
+    pub fn last_index(&self) -> TimedIndex {
+        self.try_last_index().unwrap()
     }
 
-    pub fn last_index(&self) -> Option<TimedIndex> {
-        let v = self.latest();
+    pub fn try_last_index(&self) -> Option<TimedIndex> {
+        let pseudotime = self.pseudotime();
 
-        if v.is_empty() {
+        let len = self.latest_snapshot().len();
+
+        if len == 0 {
             None
 
         } else {
-            Some(TimedIndex {
-                pos: v.len() - 1,
-                pseudotime: self.pseudotime(),
-            })
+            Some(TimedIndex { pseudotime, pos: len - 1 })
         }
-    }
-
-    pub fn oldest(&self) -> Vec<&X> {
-        self.snapshots
-            .first()
-            .unwrap()
-            .iter()
-            .map(|&pos| &self.mem[pos].val)
-            .collect()
     }
 
 
@@ -493,6 +497,7 @@ impl<X> TracingVec<X> {
 
             pos: self.latest_index(index)?,
         })
+    }
 
 
     fn latest_snapshot(&self) -> &[usize] {
@@ -519,7 +524,7 @@ impl<X> TracingVec<X> {
     }
 
     fn latest_index(&self, index: impl Into<TracingIndex>) -> Result<usize, IndexError> {
-        let index = self.into_timeless(index.into())?;
+        let index = self.into_timeless(index)?;
 
         if !self.is_alive(index) {
             return Err(IndexError::DataAlreadyDead(index));

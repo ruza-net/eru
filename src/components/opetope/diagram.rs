@@ -1,7 +1,5 @@
 use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
-use std::collections::HashSet;
-
 
 
 macro_rules! interaction {
@@ -78,10 +76,6 @@ impl<Data> Diagram<Data> {
 impl<Data> Diagram<Data> {
     pub fn level(&self) -> usize {
         self.prev.level() + 1
-    }
-
-    pub fn cell_count(&self) -> usize {
-        self.cells.len()
     }
 
     pub fn get(&self, path: &[TimelessIndex]) -> Option<&MetaCell<Data>> {
@@ -215,7 +209,7 @@ impl<Data: Clone> Diagram<Data> {
                 };
 
                 let content = TracingVec::from(vec![end]);
-                let innermost_index = content.first_index();
+                let innermost_index = content.into_timeless(content.first_index()).unwrap();
 
                 cell.content = Some(content);
 
@@ -224,10 +218,9 @@ impl<Data: Clone> Diagram<Data> {
                 path.push(innermost_index);
 
                 let level = self.level() - 1;
-                let groupings = vec![path];
 
                 EditResult::Ok(Interaction::Here {
-                    action: Action::Sprout { group: index.clone(), end: ViewIndex::Leveled { level, groupings } },
+                    action: Action::Sprout { group: index.clone(), end: ViewIndex::Leveled { level, path } },
                 })
 
             } else {
@@ -236,7 +229,7 @@ impl<Data: Clone> Diagram<Data> {
         }
     }
 
-    fn group(&mut self, cells: &[Vec<TimelessIndex>], data: Data) -> Result<ViewIndex, Error> {
+    fn group(&mut self, cells: &[Vec<TimelessIndex>], data: Data) -> Result<(ViewIndex, Vec<ViewIndex>), Error> {
         let (tail, cells) = self.check_form_tree(cells)?;
 
         let cell_space = self.cell_space_mut(tail);
@@ -248,12 +241,16 @@ impl<Data: Clone> Diagram<Data> {
                 .map(|(_, cell)| &cell.face)
         );
 
+        let mut inner = vec![];
+
         let index =
         cell_space
             .try_replace_with(cells, |cells| {
-                let content = Some(TracingVec::from(cells));
+                let content = TracingVec::from(cells);
 
-                MetaCell { data, face, content }
+                inner = content.timeless_indices().collect();
+
+                MetaCell { data, face, content: Some(content) }
             })
             .map_err(Error::IndexError)?;
 
@@ -262,10 +259,23 @@ impl<Data: Clone> Diagram<Data> {
             .into_timeless(index)
                 .unwrap();
 
+        // Path of the group.
+        //
         let mut path = tail.to_vec();
         path.push(index);
 
-        Ok(self.into_index(path))
+        // The contents' indices
+        //
+        let mut contents = vec![];
+
+        for i in inner {
+            let mut path = path.clone();
+            path.push(i);
+
+            contents.push(self.into_index(path));
+        }
+
+        Ok((self.into_index(path), contents))
     }
 
     fn wrap(&mut self, data: Data, fill: ViewIndex) -> ViewIndex {
@@ -292,7 +302,7 @@ impl<Data: Clone> Diagram<Data> {
         } else {
             self.cells.push(cell);
 
-            self.cells.last_index().unwrap()
+            self.cells.last_index()
         };
 
         let index =
@@ -307,6 +317,24 @@ impl<Data: Clone> Diagram<Data> {
 // IMPL: Utils
 //
 impl<Data> Diagram<Data> {
+    fn replace_line(&mut self, line: &ViewIndex, new: &ViewIndex) -> Result<(), Error> {
+        for cell in self.cells.iter_mut() {
+            if cell.face.fill == *line {
+                cell.face.fill = new.clone();
+            }
+
+            cell.face
+                .ends
+                .iter_mut()
+                .filter(|end| **end == *line)
+                .for_each(|end| *end = new.clone());
+
+            cell.replace_line(line, new)?;
+        }
+
+        Ok(())
+    }
+
     fn cell_with_end(&self, end: &ViewIndex) -> Option<TimedIndex> {
         self.cells
             .iter_indices()

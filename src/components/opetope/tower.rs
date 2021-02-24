@@ -25,7 +25,7 @@ macro_rules! interaction {
                 $self
                     .cells
                     .$method(index $(, $call_arg)*)
-                    .map(|timed| self.cells.into_timeless(timed).unwrap())
+                    .map(|timed| $self.cells.into_timeless(timed).unwrap())
                     .map(ViewIndex::Ground)
                     .map_err(|e| Error::IndexError(e))
                 {
@@ -59,7 +59,7 @@ pub struct Tower<Data> {
 impl<Data> Tower<Data> {
     pub fn init(root: Data) -> (ViewIndex, Self) {
         let cells = TracingVec::from(vec![root]);
-        let index = cells.first_index();
+        let index = cells.timeless_indices().next().unwrap();
 
         (
             ViewIndex::Ground(index),
@@ -141,7 +141,7 @@ impl<Data> Tower<Data> {
 
         Ok(
             self.cells
-                .last_index()
+                .try_last_index()
                 .map(|last| last == index)
                 .unwrap_or(false)
         )
