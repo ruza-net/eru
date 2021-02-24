@@ -1,5 +1,6 @@
+use tracing_vec::*;
+
 use crate::behavior::SimpleView;
-use crate::model::tracing_vec::*;
 
 pub mod data;
 pub mod index {
