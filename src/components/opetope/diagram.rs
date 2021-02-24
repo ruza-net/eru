@@ -493,7 +493,7 @@ impl<Data: Clone> Diagram<Data> {
             Ok(Tail::Diagram(Box::new(self.clone())))
 
         } else {
-            self.prev.deep_copy(level - 1)
+            self.prev.deep_copy(level)
         }
     }
 }
