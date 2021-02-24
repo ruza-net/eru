@@ -9,7 +9,7 @@ use crate::components::{
 };
 
 
-// #[derive(Default)]
+
 pub struct App {
     sidebar: Sidebar,
 
@@ -18,7 +18,7 @@ pub struct App {
     opetope: Diagram<opetope::data::Selectable<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum GlobalMessage {
     Sidebar(sidebar::Message),
     Opetope(opetope::Message),
@@ -42,6 +42,42 @@ impl Default for App {
 
 
 
+impl App {
+    fn enclose(&mut self) -> Result<(), opetope::Error> {
+        let mut name = self.count.to_string();
+        let mut wrap = name.clone() + "_wrap";
+
+        if let Some(sel) = &self.selection {
+            match
+            self.opetope
+                .extrude(sel, name.into(), wrap.into())
+                .ok()
+            {
+                Ok(_) =>
+                    Ok(()),
+
+                Err(_) => {
+                    for cell in sel.as_cells() {
+                        name = self.count.to_string();
+                        wrap = name.clone() + "_wrap";
+
+                        self.opetope
+                            .sprout(&cell, name.into(), wrap.into())
+                            .ok()?;
+
+                        self.count += 1;
+                    }
+
+                    Ok(())
+                },
+            }
+
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl Application for App {
     type Message = GlobalMessage;
 
@@ -60,31 +96,10 @@ impl Application for App {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
-        macro_rules! mutate {
-            ( $method:ident ( $($arg:expr),* ) ) => ({
-                let name = self.count.to_string();
-                let wrap = name.clone() + "_wrap";
-
-                self.opetope.$method( $($arg, )* name.into(), wrap.into() ).unwrap();
-
-                self.count += 1;
-            });
-        }
-
         match message {
             GlobalMessage::Sidebar(msg) => match msg {
-                sidebar::Message::Extrude => {
-                    if let Some(sel) = &self.selection {
-                        mutate![ extrude(sel) ]
-                    }
-                },
-
-                sidebar::Message::Sprout => {
-                    if let Some(sel) = &self.selection {
-                        for cell in sel.as_cells() {
-                            mutate![ sprout(&cell) ]
-                        }
-                    }
+                sidebar::Message::Enclose => {
+                    self.enclose().unwrap()
                 },
 
                 sidebar::Message::Pass => {

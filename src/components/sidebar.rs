@@ -9,16 +9,15 @@ pub struct Sidebar {
     tools: Vec<Tooltip<Message>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Message {
-    Extrude,
-    Sprout,
+    Enclose,
     Pass,
 }
 
 impl Default for Message {
     fn default() -> Self {
-        todo![]
+        unreachable![]
     }
 }
 
@@ -26,12 +25,8 @@ impl Default for Message {
 
 impl Default for Sidebar {
     fn default() -> Self {
-        let mut extrude = Tooltip::from_file("res/img/plus");
-        extrude.on_press(Message::Extrude);
-
-        let mut sprout = Tooltip::from_file("res/img/plus");
-        *sprout.color_mut() = color![207, 205, 14];
-        sprout.on_press(Message::Sprout);
+        let mut enclose = Tooltip::from_file("res/img/plus");
+        enclose.on_press(Message::Enclose);
 
         let mut pass = Tooltip::from_file("res/img/plus");
         *pass.color_mut() = color![29, 129, 179];
@@ -39,7 +34,7 @@ impl Default for Sidebar {
 
         Self {
             width: style::WIDTH,
-            tools: vec![extrude, sprout, pass],
+            tools: vec![enclose, pass],
         }
     }
 }
