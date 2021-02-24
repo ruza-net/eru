@@ -1,0 +1,5 @@
+[24/02/2021] Horizontal subdiagram connections
+	- cannot represent groups by moving subdiagrams
+		- messes up indexing
+		- cannot check equality of indices
+	- must implement `TracingTree`, instead of `TracingVec`
