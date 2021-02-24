@@ -4,4 +4,14 @@
 	- cannot represent groups by moving subdiagrams
 		- messes up indexing
 		- cannot check equality of indices
+
 	- must implement `TracingTree`, instead of `TracingVec`
+
+[24/02/2021] Indexing consistency
+	- selection might be invalidated after an operation
+		- when the cells move, their timeless indices change
+
+	- can be resolved by:
+		- keeping index histories
+		- implementing a `TracingTree`
+		- making indices reactive
