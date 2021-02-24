@@ -36,7 +36,7 @@ pub struct TracingVec<X> {
 #[derive(Debug, Clone, PartialEq)]
 struct Trace<X> {
     pub val: X,
-    pub death: Option<usize>,
+    pub birth: usize,
 }
 
 
@@ -50,7 +50,7 @@ impl<X> From<Vec<X>> for TracingVec<X> {
     fn from(mem: Vec<X>) -> Self {
         let (v, mem) = mem
             .into_iter()
-            .map(|val| val.into())
+            .map(|val| Trace { val, birth: 0 })
             .enumerate()
             .unzip();
 
@@ -58,14 +58,6 @@ impl<X> From<Vec<X>> for TracingVec<X> {
             mem,
 
             snapshots: vec![v],
-        }
-    }
-}
-impl<X> From<X> for Trace<X> {
-    fn from(val: X) -> Self {
-        Self {
-            val,
-            death: None,
         }
     }
 }
@@ -87,7 +79,7 @@ impl<X> TracingVec<X> {
             snapshots,
             mem: mem
                 .into_iter()
-                .map(|val| val.into())
+                .map(|val| Trace { val, birth: 0 })
                 .collect(),
         }
     }
@@ -97,7 +89,9 @@ impl<X> TracingVec<X> {
 //
 impl<X> TracingVec<X> {
     pub fn push(&mut self, val: X) {
-        self.mem.push(val.into());
+        let birth = self.pseudotime();
+
+        self.mem.push(Trace { val, birth });
 
         let tracing_index = self.last_obj_index();
 
@@ -259,6 +253,15 @@ impl<X: Clone> TracingVec<X> {
 // IMPL: Accessing
 //
 impl<X> TracingVec<X> {
+    pub fn oldest(&self) -> Vec<&X> {
+        self.snapshots
+            .first()
+            .unwrap()
+            .iter()
+            .map(|&pos| &self.mem[pos].val)
+            .collect()
+    }
+
     pub fn latest(&self) -> Vec<&X> {
         self.snapshots
             .last()
@@ -337,6 +340,7 @@ impl<X> TracingVec<X> {
             .collect()
     }
 
+
     pub fn len(&self) -> usize {
         self.latest().len()
     }
@@ -344,6 +348,7 @@ impl<X> TracingVec<X> {
     pub fn is_empty(&self) -> bool {
         self.latest().is_empty()
     }
+
 
     /// Checks if the index points to a valid location within the vector.
     ///
@@ -356,7 +361,12 @@ impl<X> TracingVec<X> {
     ///
     pub fn is_alive(&self, index: impl Into<TracingIndex>) -> bool {
         self.into_timeless(index)
-            .map(|index| self.mem[index.pos].is_alive())
+            .map(|TimelessIndex { pos }|
+                self.snapshots
+                    .last()
+                    .unwrap()
+                    .contains(&pos)
+            )
             .unwrap_or(false)
     }
 
@@ -445,6 +455,7 @@ impl<X> TracingVec<X> {
         self.snapshots.len() - 1
     }
 
+
     fn last_obj_index(&self) -> usize {
         self.mem.len() - 1
     }
@@ -459,6 +470,7 @@ impl<X> TracingVec<X> {
             .copied()
             .ok_or(IndexError::IndexOutOfBounds(index))
     }
+
 
     pub fn into_timeless(&self, index: impl Into<TracingIndex>) -> Result<TimelessIndex, IndexError> {
         match index.into() {
@@ -481,11 +493,18 @@ impl<X> TracingVec<X> {
 
             pos: self.latest_index(index)?,
         })
+
+
+    fn latest_snapshot(&self) -> &[usize] {
+        self.snapshots
+            .last()
+            .unwrap()
     }
 
     fn latest_snapshot_mut(&mut self) -> &mut Vec<usize> {
         self.snapshots.last_mut().unwrap()
     }
+
 
     fn new_snapshot(&mut self) -> &mut Vec<usize> {
         let last_snapshot_copy = self
@@ -514,12 +533,5 @@ impl<X> TracingVec<X> {
                 .unwrap()
                 .0
         )
-    }
-}
-
-
-impl<X> Trace<X> {
-    const fn is_alive(&self) -> bool {
-        self.death.is_none()
     }
 }
