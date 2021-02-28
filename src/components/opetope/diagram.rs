@@ -42,14 +42,12 @@ struct Face {
 pub struct MetaCell<Data> {
     data: Data,
     face: Face,
-
-    content: Option<TracingVec<Self>>,
 }
 
 
 #[derive(Debug, Clone)]
 pub struct Diagram<Data> {
-    cells: TracingVec<MetaCell<Data>>,
+    cells: TTree<MetaCell<Data>>,
 
     prev: Tail<Data>,
 }
@@ -78,37 +76,24 @@ impl<Data> Diagram<Data> {
         self.prev.level() + 1
     }
 
-    pub fn get(&self, path: &[TimelessIndex]) -> Option<&MetaCell<Data>> {
-        let mut acc =
+    pub fn get(&self, index: &ViewIndex) -> Option<&MetaCell<Data>> {
+        let path = index.path()?;
+
         self.cells
-            .get(*path.first()?)
-            .ok()?;
-
-        for &seg in &path[1..] {
-            acc = acc.get(seg)?;
-        }
-
-        Some(acc)
+            .get(&path)
+            .ok()
     }
 
-    pub fn get_mut(&mut self, path: &[TimelessIndex]) -> Option<&mut MetaCell<Data>> {
-        let mut acc =
+    pub fn get_mut(&mut self, index: &ViewIndex) -> Option<&mut MetaCell<Data>> {
+        let path = index.path()?;
+
         self.cells
-            .get_mut(*path.first()?)
-            .ok()?;
-
-        for &seg in &path[1..] {
-            acc = acc.get_mut(seg)?;
-        }
-
-        Some(acc)
+            .get_mut(&path)
+            .ok()
     }
 
     pub fn has_groups(&self) -> bool {
-        self
-            .cells
-            .iter()
-            .any(|cell| cell.is_group())
+        self.cells.depth() > 0
     }
 }
 
@@ -137,7 +122,7 @@ impl<Data: Clone> Diagram<Data> {
                     let (fill, ends) = extract![inter => group, contents in Interaction::Here { action: Action::Extrude { group, contents } }];
 
                     cells
-                        .as_cells()
+                        .cells()
                         .iter()
                         .zip(ends.iter())
                         .for_each(|(cell, end)| {
@@ -155,11 +140,13 @@ impl<Data: Clone> Diagram<Data> {
         }
 
         in self {
-            if cells.common_path().len() > 1 {
+            let subtree = cells.as_subtree().unwrap();
+
+            if subtree.depth() > 1 {
                 return EditResult::Err(Error::CannotExtrudeNestedCells(cells.clone()));
             }
 
-            match self.group(&cells.as_paths(), group) {
+            match self.group(&subtree, group) {
                 Ok((group, contents)) =>
                     EditResult::Ok(Interaction::Here {
                         action: Action::Extrude { group, contents },
@@ -198,38 +185,37 @@ impl<Data: Clone> Diagram<Data> {
                 Err(e) => return EditResult::Err(e),
             }
 
-            if let Some(cell) = self.get_mut(&index.path()) {
+            let end =
+            if let Some(cell) = self.get(index) {
                 let face = cell.face.clone();
 
-                let end = MetaCell {
+                MetaCell {
                     data: end,
-
                     face,
-                    content: None,
-                };
-
-                let content = TracingVec::from(vec![end]);
-                let innermost_index = content.into_timeless(content.first_index()).unwrap();
-
-                cell.content = Some(content);
-
-                let mut path = index.path();
-
-                path.push(innermost_index);
-
-                let level = self.level() - 1;
-
-                EditResult::Ok(Interaction::Here {
-                    action: Action::Sprout { group: index.clone(), end: ViewIndex::Leveled { level, path } },
-                })
+                }
 
             } else {
-                EditResult::Err(Error::NoSuchCell(index.clone()))
-            }
+                return EditResult::Err(Error::NoSuchCell(index.clone()));
+            };
+
+            let path = index
+                .path()
+                .unwrap()
+                .clone();
+
+            self.cells
+                .insert_child(&path, end)
+                .unwrap();
+
+            let level = self.level() - 1;
+
+            EditResult::Ok(Interaction::Here {
+                action: Action::Sprout { group: index.clone(), end: ViewIndex::Leveled { level, path } },
+            })
         }
     }
 
-    fn group(&mut self, cells: &[Vec<TimelessIndex>], data: Data) -> Result<(ViewIndex, Vec<ViewIndex>), Error> {
+    fn group(&mut self, cells: &tracing_tree::Subtree, data: Data) -> Result<(ViewIndex, Vec<ViewIndex>), Error> {
         let (tail, cells) = self.check_form_tree(cells)?;
 
         let cell_space = self.cell_space_mut(tail);

@@ -1,50 +1,12 @@
-use tracing_vec::*;
-
 use crate::behavior::SimpleView;
 
+use crate::model::tracing_tree;
+use tracing_tree::TTree;
+
+
+pub mod experimental;
+
 pub mod data;
-pub mod index {
-    use super::*;
-
-    pub mod local {
-        use super::*;
-
-
-        #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) ViewIndex);
-
-        impl Cell {
-            pub fn into_prev(self) -> super::prev::Cell {
-                super::prev::Cell(self.0)
-            }
-        }
-
-        impl From<ViewIndex> for Cell {
-            fn from(addr: ViewIndex) -> Self {
-                Self(addr)
-            }
-        }
-    }
-
-    pub mod prev {
-        use super::*;
-
-        #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) ViewIndex);
-
-        impl Cell {
-            pub fn into_local(self) -> super::local::Cell {
-                super::local::Cell(self.0)
-            }
-        }
-
-        impl From<ViewIndex> for Cell {
-            fn from(addr: ViewIndex) -> Self {
-                Self(addr)
-            }
-        }
-    }
-}
 
 mod tower;
 pub use tower::Tower;
@@ -55,9 +17,10 @@ pub use diagram::Diagram;
 
 
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Error {
-    IndexError(IndexError),
+    VecIndexError(tracing_vec::IndexError),
+    TreeIndexError(tracing_tree::IndexError),
 
     TooMuchDepth(usize),
     CannotEditInner(usize),
@@ -69,7 +32,7 @@ pub enum Error {
     CannotGroupDisconnected(Vec<ViewIndex>),
 
     CellsDoNotFormTree(Vec<ViewIndex>),
-    CellsDoNotHaveOutput(Vec<TimelessIndex>),
+    CellsDoNotHaveOutput(Vec<ViewIndex>),
 
     NoLayerBeneath,
     CannotConvertAlreadyGrouped,
@@ -89,7 +52,7 @@ pub enum EditResult<O, Data> {
     Err(Error),
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
     Extrude { group: ViewIndex, contents: Vec<ViewIndex> },
     Sprout { group: ViewIndex, end: ViewIndex },
@@ -98,7 +61,7 @@ pub enum Action {
     // NOTE: Split is represented by two actions.
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Interaction {
     InPrevious { action: Action, wrap: ViewIndex },
 
@@ -131,7 +94,7 @@ impl<Data> Tail<Data> {
         has_groups() -> bool,
 
         is_end(cell: &ViewIndex) -> Result<bool, Error>,
-        contents_of(index: &[TimelessIndex]) -> Option<Vec<ViewIndex>>
+        contents_of(index: &ViewIndex) -> Option<Vec<ViewIndex>>
     }
 }
 
@@ -237,27 +200,27 @@ pub mod viewing {
     use super::*;
     use std::fmt;
 
-    #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum ViewIndex {
-        Ground(TimelessIndex),
-        Leveled { level: usize, path: Vec<TimelessIndex> },
+        Ground(tracing_vec::TimelessIndex),
+        Leveled { level: usize, path: tracing_tree::TimedIndex },
     }
 
-    #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum Selection {
-        Ground(TimelessIndex),
-        Leveled { level: usize, path: Vec<TimelessIndex>, cells: Vec<TimelessIndex> },
+        Ground(tracing_vec::TimelessIndex),
+        Leveled { level: usize, sel: tracing_tree::Subtree },
     }
 
-    #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum Message {
         Idle,
         Select(ViewIndex),
     }
 
     pub(in super) trait Index {
-        fn as_ground(&self) -> Option<TimelessIndex>;
-        fn as_paths(&self) -> Vec<Vec<TimelessIndex>>;
+        fn as_ground(&self) -> Option<tracing_vec::TimelessIndex>;
+        fn as_subtree(&self) -> Option<tracing_tree::Subtree>;
         fn level(&self) -> usize;
     }
 
@@ -265,49 +228,17 @@ pub mod viewing {
     // IMPL: Accessing
     //
     impl ViewIndex {
-        pub fn path(&self) -> Vec<TimelessIndex> {
+        pub fn to_path(self) -> Option<tracing_tree::TimedIndex> {
             match self {
-                Self::Ground(index) => vec![*index],
-                Self::Leveled { path, .. } => path.clone(),
+                ViewIndex::Ground(_) => None,
+                ViewIndex::Leveled { path, .. } => Some(path),
             }
         }
 
-        pub fn tail(&self) -> Vec<TimelessIndex> {
+        pub fn path(&self) -> Option<&tracing_tree::TimedIndex> {
             match self {
-                ViewIndex::Ground(_) => vec![],
-                ViewIndex::Leveled { path, .. } => path[.. path.len() - 1].to_vec(),
-            }
-        }
-    }
-
-    // IMPL: Accessing
-    //
-    impl Selection {
-        pub fn as_cells(&self) -> Vec<ViewIndex> {
-            match self {
-                Selection::Ground(idx) => vec![ViewIndex::Ground(*idx)],
-
-                Selection::Leveled { level, path, cells } => {
-                    let level = *level;
-
-                    cells
-                        .iter()
-                        .cloned()
-                        .map(|cell| {
-                            let mut path = path.clone();
-                            path.push(cell);
-
-                            ViewIndex::Leveled { level, path }
-                        })
-                        .collect()
-                }
-            }
-        }
-
-        pub fn common_path(&self) -> Vec<TimelessIndex> {
-            match self {
-                Self::Ground(_) => vec![],
-                Self::Leveled { path, .. } => path.clone(),
+                ViewIndex::Ground(_) => None,
+                ViewIndex::Leveled { path, .. } => Some(path),
             }
         }
     }
@@ -320,16 +251,10 @@ pub mod viewing {
                 Selection::Ground(index) =>
                     vec![ViewIndex::Ground(*index)],
 
-                Selection::Leveled { level, path, cells } =>
-                    cells
+                Selection::Leveled { level, sel } =>
+                    sel
                         .iter()
-                        .copied()
-                        .map(|cell| {
-                            let mut path = path.clone();
-                            path.push(cell);
-
-                            path
-                        })
+                        .cloned()
                         .map(|path| ViewIndex::Leveled { level: *level, path })
                         .collect()
             }
@@ -343,19 +268,20 @@ pub mod viewing {
                 Self::Leveled { level, .. } => level + 1,
             }
         }
-        fn as_ground(&self) -> Option<TimelessIndex> {
+        fn as_ground(&self) -> Option<tracing_vec::TimelessIndex> {
             match self {
                 Self::Ground(index) => Some(*index),
                 Self::Leveled { .. } => None,
             }
         }
-        fn as_paths(&self) -> Vec<Vec<TimelessIndex>> {
+        fn as_subtree(&self) -> Option<tracing_tree::Subtree> {
             match self {
-                ViewIndex::Ground(index) => vec![vec![*index]],
-                ViewIndex::Leveled { path, .. } => vec![path.clone()],
+                ViewIndex::Ground(_) => None,
+                ViewIndex::Leveled { path, .. } => Some(path.clone().into()),
             }
         }
     }
+
     impl Index for Selection {
         fn level(&self) -> usize {
             match self {
@@ -363,28 +289,17 @@ pub mod viewing {
                 Self::Leveled { level, .. } => level + 1,
             }
         }
-        fn as_ground(&self) -> Option<TimelessIndex> {
+        fn as_ground(&self) -> Option<tracing_vec::TimelessIndex> {
             match self {
                 Self::Ground(index) => Some(*index),
                 Self::Leveled { .. } => None,
             }
         }
-        fn as_paths(&self) -> Vec<Vec<TimelessIndex>> {
+        fn as_subtree(&self) -> Option<tracing_tree::Subtree> {
             match self {
-                Selection::Ground(index) =>
-                    vec![vec![*index]],
+                Selection::Ground(index) => None,
 
-                Selection::Leveled { path, cells, .. } =>
-                    cells
-                        .iter()
-                        .copied()
-                        .map(|cell| {
-                            let mut tail = path.clone();
-                            tail.push(cell);
-
-                            tail
-                        })
-                        .collect()
+                Selection::Leveled { sel, .. } => Some(sel.clone()),
             }
         }
     }
@@ -398,10 +313,7 @@ pub mod viewing {
                 Self::Leveled { level, path } => write![fmt,
                     "{}↑{}",
                     level + 1,
-                    path.iter()
-                        .map(|seg| seg.to_string())
-                        .collect::<Vec<_>>()
-                        .join("."),
+                    path,
                 ],
             }
         }

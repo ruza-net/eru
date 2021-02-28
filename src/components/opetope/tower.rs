@@ -1,5 +1,7 @@
 use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
+use tracing_vec::TracingVec;
+
 
 macro_rules! interaction {
     (
@@ -27,7 +29,7 @@ macro_rules! interaction {
                     .$method(index $(, $call_arg)*)
                     .map(|timed| $self.cells.into_timeless(timed).unwrap())
                     .map(ViewIndex::Ground)
-                    .map_err(|e| Error::IndexError(e))
+                    .map_err(|e| Error::VecIndexError(e))
                 {
                     Ok($field) =>
                         EditResult::Ok(Interaction::Here {
@@ -75,7 +77,7 @@ impl<Data> Tower<Data> {
 impl<Data> Tower<Data> {
     interaction! {
         self.extrude(extract[sel: Selection], group: Data, _wrap: Data)
-            => Extrude { group, contents: self.contents_of(&group.path()).unwrap() }
+            => Extrude { group, contents: self.contents_of(&group).unwrap() }
             => try_insert_after(group)
 
         where if !is_bottom => CannotExtrudeNestedCells
@@ -153,8 +155,8 @@ impl<Data> Tower<Data> {
         todo!()
     }
 
-    pub fn contents_of(&self, index: &[TimelessIndex]) -> Option<Vec<ViewIndex>> {
-        let index = if let &[index] = index { index } else { None? };
+    pub fn contents_of(&self, index: &ViewIndex) -> Option<Vec<ViewIndex>> {
+        let index = if let Some(index) = index.as_ground() { index } else { None? };
 
         let timed =
         self.cells
@@ -174,12 +176,12 @@ impl<Data> Tower<Data> {
 // IMPL: Utils
 //
 impl<Data> Tower<Data> {
-    fn extract(sel: &Selection) -> Result<TimelessIndex, Error> {
+    fn extract(sel: &Selection) -> Result<tracing_vec::TimelessIndex, Error> {
         sel .as_ground()
             .ok_or(Error::TooMuchDepth(sel.level()))
     }
 
-    fn valid_level(cell: &dyn super::viewing::Index) -> Result<TimelessIndex, Error> {
+    fn valid_level(cell: &dyn super::viewing::Index) -> Result<tracing_vec::TimelessIndex, Error> {
         if let Some(index) = cell.as_ground() {
             Ok(index)
 
