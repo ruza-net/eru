@@ -14,7 +14,6 @@ pub struct App {
     sidebar: Sidebar,
 
     count: usize,
-    selection: Option<opetope::Selection>,
     opetope: Diagram<opetope::data::Selectable<String>>,
 }
 
@@ -33,7 +32,6 @@ impl Default for App {
             sidebar: fill![],
 
             opetope,
-            selection: None,
 
             count: 1,
         }
@@ -47,14 +45,17 @@ impl App {
         let mut name = self.count.to_string();
         let mut wrap = name.clone() + "_wrap";
 
-        if let Some(sel) = &self.selection {
+        if let Some(sel) = self.opetope.selected_cells() {
             match
             self.opetope
-                .extrude(sel, name.into(), wrap.into())
+                .extrude(&sel, name.into(), wrap.into())
                 .ok()
             {
-                Ok(_) =>
-                    Ok(()),
+                Ok(_) => {
+                    self.count += 1;
+
+                    Ok(())
+                },
 
                 Err(_) => {
                     for cell in sel.as_cells() {
@@ -111,7 +112,7 @@ impl Application for App {
                 opetope::Message::Idle => unreachable!["idle message"],
 
                 opetope::Message::Select(cell) => {
-                    self.selection = self.opetope.select(&cell).unwrap();
+                    self.opetope.select(&cell).unwrap();
                 },
             },
         }
