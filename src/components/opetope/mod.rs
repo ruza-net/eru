@@ -131,6 +131,7 @@ impl<Data> Tail<Data> {
         has_groups() -> bool,
 
         is_end(cell: &ViewIndex) -> Result<bool, Error>,
+        is_before(before: &ViewIndex, after: &ViewIndex) -> bool,
         contents_of(index: &[TimelessIndex]) -> Option<Vec<ViewIndex>>
     }
 }
@@ -154,7 +155,7 @@ impl<Data: SimpleView> Tail<data::Selectable<Data>> {
 impl<Data: Clone> Tail<Data> {
     common_methods! {
         [mut] extrude(cell: &viewing::Selection, group: Data, wrap: Data) -> EditResult<Interaction, Data>,
-        [mut] sprout(cell: &ViewIndex, end: Data, wrap: Data) -> EditResult<Interaction, Data>
+        [mut] sprout(cell: &viewing::ViewIndex, end: Data, wrap: Data) -> EditResult<Interaction, Data>
     }
 }
 
@@ -163,7 +164,9 @@ impl<Data: Clone> Tail<Data> {
 impl<Data> Tail<data::Selectable<Data>> {
     common_methods! {
         [mut] select(cell: &ViewIndex) -> Result<Option<viewing::Selection>, Error>,
-        [mut] unselect_all(max_depth: usize)
+        [mut] unselect_all(max_depth: usize),
+
+        selected_cells() -> Option<Selection>
     }
 }
 
@@ -276,6 +279,21 @@ pub mod viewing {
             match self {
                 ViewIndex::Ground(_) => vec![],
                 ViewIndex::Leveled { path, .. } => path[.. path.len() - 1].to_vec(),
+            }
+        }
+
+        pub fn subst_prefix(&mut self, prefix: &[TimelessIndex], sub: &[TimelessIndex]) {
+            match self {
+                ViewIndex::Ground(_) => {},
+
+                ViewIndex::Leveled { path, .. } => {
+                    let len = prefix.len();
+
+                    if path.starts_with(prefix) {
+                        path.splice(.. len, sub.iter().copied())
+                            .for_each(|_| {});
+                    }
+                },
             }
         }
     }

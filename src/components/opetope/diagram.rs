@@ -1,3 +1,6 @@
+use itertools::Itertools;
+use crate::utils::{ EncapsulateIter, ProjectIter };
+
 use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
 
@@ -128,7 +131,8 @@ impl<Data> Diagram<Data> {
 // IMPL: Editing
 //
 impl<Data: Clone> Diagram<Data> {
-    interaction!{ extrude(&mut self, cells: &Selection, group: Data, wrap: Data)
+    interaction!{
+    extrude(&mut self, cells: &Selection, group: Data, wrap: Data)
         in prev {
             self
                 .prev
@@ -141,10 +145,10 @@ impl<Data: Clone> Diagram<Data> {
                         .iter()
                         .zip(ends.iter())
                         .for_each(|(cell, end)| {
-                            self.replace_line(cell, end).unwrap()
+                            self.replace_line(&cell.path(), &end.path()).unwrap()
                         });
 
-                    let wrap = self.wrap(wrap, fill.clone());
+                    let wrap = self.wrap_extrusion(wrap, &ends, fill.clone());
 
                     Interaction::InPrevious {
                         wrap,
@@ -155,22 +159,24 @@ impl<Data: Clone> Diagram<Data> {
         }
 
         in self {
-            if cells.common_path().len() > 1 {
+            if cells.common_path().len() > 0 {
                 return EditResult::Err(Error::CannotExtrudeNestedCells(cells.clone()));
             }
 
-            match self.group(&cells.as_paths(), group) {
-                Ok((group, contents)) =>
-                    EditResult::Ok(Interaction::Here {
-                        action: Action::Extrude { group, contents },
-                    }),
+            match self.group(&cells.as_paths(), group.into()) {
+                Ok((group, contents)) => {
+                        EditResult::Ok(Interaction::Here {
+                            action: Action::Extrude { group, contents },
+                        })
+                    },
 
                 Err(e) => EditResult::Err(e),
             }
         }
     }
 
-    interaction!{ sprout(&mut self, index: &ViewIndex, end: Data, wrap: Data)
+    interaction!{
+    sprout(&mut self, index: &ViewIndex, end: Data, wrap: Data)
         in prev {
             self
                 .prev
@@ -178,7 +184,9 @@ impl<Data: Clone> Diagram<Data> {
                 .map(|inter| {
                     let (fill, end) = extract![inter => group, end in Interaction::Here { action: Action::Sprout { group, end } }];
 
-                    let wrap = self.wrap(wrap, fill.clone());
+                    self.replace_line(&index.path(), &fill.path()).unwrap();
+
+                    let wrap = self.wrap_sprout(wrap.into(), &fill, end.clone());
 
                     Interaction::InPrevious {
                         wrap,
@@ -202,7 +210,7 @@ impl<Data: Clone> Diagram<Data> {
                 let face = cell.face.clone();
 
                 let end = MetaCell {
-                    data: end,
+                    data: end.into(),
 
                     face,
                     content: None,
@@ -228,7 +236,9 @@ impl<Data: Clone> Diagram<Data> {
             }
         }
     }
+}
 
+impl<Data: Clone> Diagram<Data> {
     fn group(&mut self, cells: &[Vec<TimelessIndex>], data: Data) -> Result<(ViewIndex, Vec<ViewIndex>), Error> {
         let (tail, cells) = self.check_form_tree(cells)?;
 
@@ -254,53 +264,125 @@ impl<Data: Clone> Diagram<Data> {
             })
             .map_err(Error::IndexError)?;
 
+
         let index =
         cell_space
             .into_timeless(index)
                 .unwrap();
 
-        // Path of the group.
-        //
-        let mut path = tail.to_vec();
-        path.push(index);
+        let mut group_path = tail.to_vec();
+        group_path.push(index);
 
-        // The contents' indices
-        //
-        let mut contents = vec![];
+
+        let mut contents_indices = vec![];
 
         for i in inner {
-            let mut path = path.clone();
-            path.push(i);
+            let mut member_path = group_path.clone();
+            member_path.push(i);
 
-            contents.push(self.into_index(path));
+            contents_indices.push(self.into_index(member_path));
         }
 
-        Ok((self.into_index(path), contents))
+        Ok((self.into_index(group_path), contents_indices))
     }
 
-    fn wrap(&mut self, data: Data, fill: ViewIndex) -> ViewIndex {
-        let ends =
-        self.prev
-            .contents_of(&fill.path())
+    fn wrap_sprout(&mut self, data: Data, old_end_line: &ViewIndex, sprouted_line: ViewIndex) -> ViewIndex {
+        let mut cells_below =
+        self.cells
+            .iter_indices();
+
+        let mut cells_with_fill_before = cells_below
+            .take_while_ref(|(_, cell)|
+                !cell.face.ends.contains(old_end_line)
+            )
+            .encapsulate();
+
+        // NOTE: `cells_below` are now the downstream cells.
+        // NOTE: `cells_with_fill_before` are the upstream cells and the parallel cells.
+
+        let cells_with_end_after = cells_with_fill_before
+            .take_while_ref(|(_, cell)| !self.has_fill_before(cell, old_end_line))
+            .encapsulate();
+
+        // NOTE: `cells_with_fill_before` are now cells between the downstream cells and the
+        // preceding cells.
+
+        // NOTE: `cells_with_end_after` are the upstream cells and the parallel cells running
+        // into the ends to the right of `old_end_line`.
+
+        let mut cells_below = cells_below.proj_l();
+        let mut cells_with_end_after = cells_with_end_after.proj_l();
+
+        let cells_with_fill_before = cells_with_fill_before.proj_l();
+
+        let wrap = MetaCell {
+            data,
+            face: Face {
+                ends: vec![sprouted_line],
+                fill: old_end_line.clone(),
+            },
+
+            content: None,
+        };
+
+        dbg![&cells_with_end_after];
+
+        let inserted =// FIXME: Multiple sprouting messes up
+        if let Some(preceding) = dbg![cells_with_fill_before].last() {
+            self.cells.insert_after(preceding, wrap)
+
+        } else if let Some(succeeding) = cells_with_end_after.next().or(cells_below.next()) {
+            self.cells.insert_before(succeeding, wrap)
+
+        } else {
+            self.cells.push(wrap);
+
+            self.cells.last_index()
+        };
+
+        let index =
+        self.cells
+            .into_timeless(inserted)
             .unwrap();
 
-        let cell_below = self.cell_with_end(&fill);
+        self.into_index(vec![index])
+    }
 
-        let cell = MetaCell {
+    fn wrap_extrusion(&mut self, data: Data, old_fill_lines: &[ViewIndex], created_line: ViewIndex) -> ViewIndex {
+        let mut upstream_outputs = old_fill_lines.to_vec();
+
+        upstream_outputs.sort_by(|a, b| {
+            if self.prev.is_before(a, b) {
+                std::cmp::Ordering::Less
+
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+
+        let lowest_fill_line = upstream_outputs.pop().unwrap();
+
+        let mut cells_above =
+        self.cells
+            .iter_indices()
+            .filter(|(_, cell)| lowest_fill_line == cell.face.fill)
+            .proj_l();
+
+        let wrap = MetaCell {
             data,
-            face: Face { ends, fill },
+            face: Face {
+                ends: old_fill_lines.to_vec(),
+                fill: created_line,
+            },
 
             content: None,
         };
 
         let index =
-        if let Some(index) = cell_below {
-            self.cells.insert_before(index, cell);
-
-            index
-
+        if let Some(cell_above) = cells_above.next() {
+            self.cells.insert_after(cell_above, wrap)
         } else {
-            self.cells.push(cell);
+            self.cells.push(wrap);
 
             self.cells.last_index()
         };
@@ -312,22 +394,23 @@ impl<Data: Clone> Diagram<Data> {
 
         self.into_index(vec![index])
     }
+
+    fn wrap_split(&mut self, wrap_data: Data, split_line: &ViewIndex) -> ViewIndex {
+        todo!()
+    }
 }
 
 // IMPL: Utils
 //
 impl<Data> Diagram<Data> {
-    fn replace_line(&mut self, line: &ViewIndex, new: &ViewIndex) -> Result<(), Error> {
+    fn replace_line(&mut self, line: &[TimelessIndex], new: &[TimelessIndex]) -> Result<(), Error> {
         for cell in self.cells.iter_mut() {
-            if cell.face.fill == *line {
-                cell.face.fill = new.clone();
-            }
+            cell.face.fill.subst_prefix(line, new);
 
             cell.face
                 .ends
                 .iter_mut()
-                .filter(|end| **end == *line)
-                .for_each(|end| *end = new.clone());
+                .for_each(|end| end.subst_prefix(line, new));
 
             cell.replace_line(line, new)?;
         }
@@ -335,12 +418,102 @@ impl<Data> Diagram<Data> {
         Ok(())
     }
 
-    fn cell_with_end(&self, end: &ViewIndex) -> Option<TimedIndex> {
+
+    fn cells_with_end(&self, end: &ViewIndex) -> Vec<TimedIndex> {
+        let mut cells =
         self.cells
             .iter_indices()
             .filter(|(_, cell)| cell.face.ends.contains(end))
+            .collect();
+
+        self.sort(&mut cells);
+
+        cells
+            .into_iter()
             .map(|(index, _)| index)
-            .next()
+            .collect()
+    }
+
+    fn cells_after_end(&self, end: &ViewIndex) -> Vec<TimedIndex> {
+        let mut cells =
+        self.cells
+            .iter_indices()
+            .filter(|(_, cell)|
+                cell.face
+                    .ends
+                    .iter()
+                    .all(|e| self.prev.is_before(end, e))
+            )
+            .collect();
+
+        self.sort(&mut cells);
+
+        cells
+            .into_iter()
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+
+    fn has_fill_before(&self, cell: &MetaCell<Data>, end: &ViewIndex) -> bool {
+        dbg![self.prev.is_before(dbg![&cell.face.fill], dbg![end])]
+    }
+
+    fn has_ends_before(&self, cell: &MetaCell<Data>, end: &ViewIndex) -> bool {
+        cell.face
+            .ends
+            .iter()
+            .all(|e| self.prev.is_before(e, end))
+    }
+
+
+    // FIXME: Trait bounds
+    //
+    fn choose_boundary<I>(mut cells: I, edit: Edit) -> Option<I::Item> where I: Iterator, I::Item: std::fmt::Debug + Clone {
+        match edit {
+            Edit::Sprout =>
+                dbg![cells.last()],
+
+            Edit::Extrude =>
+                cells.next(),
+        }
+    }
+
+    fn sort<I>(&self, cells: &mut Vec<(I, &MetaCell<Data>)>) {
+        cells
+            .sort_unstable_by(|(_, a), (_, b)| {
+                let ends_before = a
+                    .face
+                    .ends
+                    .iter()
+                    .cartesian_product(
+                        b
+                        .face
+                        .ends
+                        .iter()
+                    )
+                    .all(|(a, b)| self.prev.is_before(a, b));
+
+                if ends_before {
+                    std::cmp::Ordering::Less
+
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            });
+    }
+
+
+    fn cell_space(&self, path: &[TimelessIndex]) -> &TracingVec<MetaCell<Data>> {
+        if let Some(owner) = self.get(path) {
+            owner
+                .content
+                    .as_ref()
+                    .unwrap()
+
+        } else {
+            &self.cells
+        }
     }
 
     fn cell_space_mut(&mut self, path: &[TimelessIndex]) -> &mut TracingVec<MetaCell<Data>> {
@@ -359,6 +532,7 @@ impl<Data> Diagram<Data> {
         }
     }
 
+
     fn all_inputs(&self) -> Vec<ViewIndex> {
         let outputs: Vec<_> =
         self.cells
@@ -373,6 +547,7 @@ impl<Data> Diagram<Data> {
             .filter(|input| !outputs.contains(&input))
             .collect()
     }
+
 
     fn into_index(&self, path: Vec<TimelessIndex>) -> ViewIndex {
         ViewIndex::Leveled {
@@ -448,7 +623,11 @@ impl<Data> Diagram<Data> {
             ))
         }
     }
+}
 
+/// Common opetope interface
+///
+impl<Data> Diagram<Data> {
     pub fn contents_of(&self, cell: &[TimelessIndex]) -> Option<Vec<ViewIndex>> {
         self.get(cell)
             .map(|cell| cell.content.as_ref())
@@ -474,6 +653,55 @@ impl<Data> Diagram<Data> {
                 .ok_or(Error::NoSuchCell(cell.clone()))?
                 .content
                 .is_none()
+        )
+    }
+
+    pub fn is_before(&self, before: &ViewIndex, after: &ViewIndex) -> bool {
+        let mut before = self.valid_level(before).unwrap();
+        let mut after = self.valid_level(after).unwrap();
+
+        let common_path = Self::remove_common_prefix(&mut before, &mut after);
+
+        let cell_space = self.cell_space(&common_path);
+
+        if let ([before, ..], [after, ..]) = (&before[..], &after[..]) {
+            cell_space.is_before(*before, *after).unwrap()
+
+        } else {
+            true
+        }
+    }
+
+    fn remove_common_prefix<X>(path_a: &mut Vec<X>, path_b: &mut Vec<X>) -> Vec<X> where X: PartialEq {
+        path_a.reverse();
+        path_b.reverse();
+
+        let mut common = vec![];
+
+        while !path_a.is_empty() && !path_b.is_empty() && path_a[0] == path_b[0] {
+            let x = path_a.pop().unwrap();
+            path_b.pop();
+
+            common.push(x);
+        }
+
+        path_a.reverse();
+        path_b.reverse();
+
+        common
+    }
+}
+
+
+/// Validation
+///
+impl<Data> Diagram<Data> {
+    fn valid_top_level(&self, index: &ViewIndex) -> Result<TimelessIndex, Error> {
+        Ok(
+            self.valid_level(index)?
+                .first()
+                .copied()
+                .unwrap()
         )
     }
 
@@ -542,7 +770,11 @@ impl<Data> Diagram<data::Selectable<Data>> {
             .for_each(|cell| cell.unselect_all())
     }
 
-    fn selected_cells(&self) -> Option<Selection> {
+    pub fn selected_cells(&self) -> Option<Selection> {
+        if let Some(sel) = self.prev.selected_cells() {
+            return Some(sel);
+        }
+
         let all_selected =
         self.cells
             .iter_timeless_indices()
@@ -608,18 +840,15 @@ impl<Data> MetaCell<Data> {
 // IMPL: Utils
 //
 impl<Data> MetaCell<Data> {
-    fn replace_line(&mut self, line: &ViewIndex, new: &ViewIndex) -> Result<(), Error> {
+    fn replace_line(&mut self, line: &[TimelessIndex], new: &[TimelessIndex]) -> Result<(), Error> {
         if let Some(content) = &mut self.content {
             for cell in content.iter_mut() {
-                if cell.face.fill == *line {
-                    cell.face.fill = new.clone();
-                }
+                cell.face.fill.subst_prefix(line, new);
 
                 cell.face
                     .ends
                     .iter_mut()
-                    .filter(|end| **end == *line)
-                    .for_each(|end| *end = new.clone());
+                    .for_each(|end| end.subst_prefix(line, new));
 
                 cell.replace_line(line, new)?;
             }

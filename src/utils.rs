@@ -10,6 +10,18 @@ macro_rules! extract {
     };
 }
 
+#[macro_export]
+macro_rules! fn_is_before {
+    ( $conv:ident ) => {
+        pub fn is_before(&self, before: &ViewIndex, after: &ViewIndex) -> bool {
+            let before = self.$conv(before).unwrap();
+            let after = self.$conv(after).unwrap();
+
+            self.cells.is_before(before, after).unwrap()
+        }
+    };
+}
+
 
 #[macro_export]
 macro_rules! color {
@@ -109,3 +121,24 @@ impl ThenOk for bool {
         }
     }
 }
+
+
+
+pub trait EncapsulateIter: Iterator {
+    fn encapsulate(self) -> <Vec<Self::Item> as IntoIterator>::IntoIter where Self: Sized {
+        self.collect::<Vec<_>>()
+            .into_iter()
+    }
+}
+impl<I> EncapsulateIter for I where I: Iterator {}
+
+pub trait ProjectIter<X, Y>: Iterator<Item = (X, Y)> {
+    fn proj_l(self) -> <Vec<X> as IntoIterator>::IntoIter where Self: Sized {
+        self.map(|(x, _)| x).encapsulate()
+    }
+
+    fn proj_r(self) -> <Vec<Y> as IntoIterator>::IntoIter where Self: Sized {
+        self.map(|(_, y)| y).encapsulate()
+    }
+}
+impl<X, Y, I> ProjectIter<X, Y> for I where I: Iterator<Item = (X, Y)> {}

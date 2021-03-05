@@ -187,6 +187,14 @@ impl<Data> Tower<Data> {
             Err(Error::TooMuchDepth(cell.level()))
         }
     }
+
+    fn as_ground(&self, index: &ViewIndex) -> Result<TimelessIndex, Error> {
+        index
+            .as_ground()
+            .ok_or(Error::TooMuchDepth(index.level()))
+    }
+
+    fn_is_before! { as_ground }
 }
 
 impl<Data: Clone> Tower<Data> {
@@ -231,6 +239,14 @@ impl<Data> Tower<data::Selectable<Data>> {
         self.cells
             .iter_mut()
             .for_each(|cell| cell.unselect())
+    }
+
+    pub fn selected_cells(&self) -> Option<Selection> {
+        self.cells
+            .iter_timeless_indices()
+            .filter(|(_, cell)| cell.selected())
+            .map(|(index, _)| Selection::Ground(index))
+            .next()
     }
 }
 
