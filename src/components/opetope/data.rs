@@ -36,6 +36,7 @@ impl<Data: SimpleView> Selectable<Data> {
                 iced::Column::new()
                     .push(contents)
                     .push(self.view_data())
+                    .align_items(iced::Align::Center)
                     .into()
 
             } else {

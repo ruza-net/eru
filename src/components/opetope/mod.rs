@@ -144,7 +144,7 @@ impl<Data: Clone> Tail<Data> {
 
 // IMPL: Viewing
 //
-impl<Data: SimpleView> Tail<data::Selectable<Data>> {
+impl<Data: SimpleView + std::fmt::Debug> Tail<data::Selectable<Data>> {
     common_methods! {
         [mut] view() -> iced::Element<viewing::Message>
     }
