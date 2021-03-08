@@ -12,6 +12,8 @@ pub struct Sidebar {
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Message {
     Enclose,
+    Sprout,
+
     Pass,
 }
 
