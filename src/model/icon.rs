@@ -12,7 +12,9 @@ use iced::{
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Config {
     color: [f32; 4],
+
     text: Option<String>,
+    label: Option<String>,
 }
 
 enum Data {
@@ -28,6 +30,7 @@ pub struct Icon {
     data: Data,
 
     pub color: Color,
+    pub label: Option<String>,
 }
 
 
@@ -43,7 +46,7 @@ impl Icon {
 
         file_contents!{ color_path >> buf }
 
-        let Config { mut color, text } = ron::from_str(&buf).expect("invalid data in `color.ron`");
+        let Config { mut color, label, text } = ron::from_str(&buf).expect("invalid data in `color.ron`");
 
         color[0] /= 256.;
         color[1] /= 256.;
@@ -59,24 +62,27 @@ impl Icon {
         Self {
             data,
 
+            label,
             color: color.into(),
         }
     }
-    pub fn from_text(txt: impl ToString, color: impl Into<Color>) -> Self {
+    pub fn from_text(txt: impl ToString, label: Option<String>, color: impl Into<Color>) -> Self {
         let data = Data::Text(txt.to_string());
 
         Self {
             data,
 
+            label,
             color: color.into(),
         }
     }
-    pub fn from(el: Box<dyn SimpleView>, color: impl Into<Color>) -> Self {
+    pub fn from(el: Box<dyn SimpleView>, label: Option<String>, color: impl Into<Color>) -> Self {
         let data = Data::Element(el);
 
         Self {
             data,
 
+            label,
             color: color.into(),
         }
     }

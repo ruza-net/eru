@@ -34,7 +34,7 @@ macro_rules! color {
         }
     };
 
-    ( $r:expr ; $g:expr ; $b:expr ; $a:expr ) => {
+    ( $r:expr , $g:expr , $b:expr , $a:expr ) => {
         iced::Color {
             r: $r as f32 / 255.,
             g: $g as f32 / 255.,

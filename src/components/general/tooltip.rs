@@ -1,4 +1,4 @@
-use iced::button;
+use iced::{ button, tooltip };
 
 use crate::behavior::SimpleView;
 use crate::model::Icon;
@@ -13,7 +13,9 @@ use std::path::PathBuf;
 
 pub struct Tooltip<Msg> {
     icon: Icon,
+
     on_press: Option<Msg>,
+
     state: button::State,
 }
 
@@ -30,8 +32,8 @@ impl<Msg> Tooltip<Msg> {
         }
     }
 
-    pub fn from(el: Box<dyn SimpleView>, color: impl Into<iced::Color>) -> Self {
-        let icon = Icon::from(el, color);
+    pub fn from(el: Box<dyn SimpleView>, label: Option<String>, color: impl Into<iced::Color>) -> Self {
+        let icon = Icon::from(el, label, color);
 
         Self {
             icon,
@@ -41,8 +43,8 @@ impl<Msg> Tooltip<Msg> {
         }
     }
 
-    pub fn from_text(text: impl ToString, color: impl Into<iced::Color>) -> Self {
-        let icon = Icon::from_text(text.to_string(), color);
+    pub fn from_text(text: impl ToString, label: Option<String>, color: impl Into<iced::Color>) -> Self {
+        let icon = Icon::from_text(text.to_string(), label, color);
 
         Self {
             icon,
@@ -54,6 +56,11 @@ impl<Msg> Tooltip<Msg> {
 
     pub fn on_press(&mut self, msg: Msg) -> &mut Self {
         self.on_press = Some(msg);
+        self
+    }
+
+    pub fn label(&mut self, label: String) -> &mut Self {
+        self.icon.label = Some(label);
         self
     }
 
@@ -82,7 +89,14 @@ impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
             btn = btn.on_press(on_press.clone());
         }
 
-        btn.into()
+        if let Some(label) = &self.icon.label {
+            tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
+            .style(crate::styles::container::Tooltip)
+            .into()
+
+        } else {
+            btn.into()
+        }
     }
 }
 

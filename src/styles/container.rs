@@ -19,6 +19,7 @@ pub mod color {
     pub const SELECTED: iced::Color = color![255, 154, 97];
 }
 
+
 pub const PADDING: u16 = 8;
 
 pub const LINE: Style = Style {
@@ -35,6 +36,10 @@ pub const SELECTED_CELL: Style = Style {
     kind: Kind::Cell { selected: true },
     color: iced::Color::BLACK,
 };
+
+
+pub struct Tooltip;
+
 
 pub struct Style {
     kind: Kind,
@@ -53,13 +58,6 @@ impl Style {
             kind: Kind::Cell { selected: false },
             color,
         }
-    }
-
-    fn bleak_color(&self) -> iced::Color {
-        let mut color = self.color;
-        color.a -= 0.75;
-
-        color
     }
 
     fn lighten_color(&self) -> iced::Color {
@@ -108,6 +106,20 @@ impl container::StyleSheet for Style {
 
                 ..fill![]
             },
+        }
+    }
+}
+
+impl container::StyleSheet for Tooltip {
+    fn style(&self) -> container::Style {
+        container::Style {
+            border_color: iced::Color::BLACK,
+            border_width: cell::WIDTH / 3.,
+            border_radius: cell::RADIUS,
+
+            background: Some(color![204, 235, 238, 0.7].into()),
+
+            ..fill![]
         }
     }
 }
