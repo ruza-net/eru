@@ -1,4 +1,7 @@
-use super::{ *, viewing::{ ViewIndex, Selection, Index } };
+use super::{
+    *,
+    viewing::{ ViewIndex, Selection, Index }
+};
 
 
 macro_rules! interaction {
@@ -82,6 +85,14 @@ impl<Data> Tower<Data> {
     }
 
     interaction! {
+        self.split(extract[sel: Selection], group: Data, _wrap_top: Data, _wrap_bot: Data)
+            => Split { group, contents: self.contents_of(&group.path()).unwrap() }
+            => try_insert_after(group)
+
+        where if !is_middle => CannotSplitBoundaryCells
+    }
+
+    interaction! {
         self.sprout(valid_level[index: ViewIndex], end: Data, _wrap: Data)
             => Sprout { end, group: index.clone() }
             => try_insert_before(end)
@@ -115,23 +126,23 @@ impl<Data> Tower<Data> {
         self.cells.len() > 1
     }
 
-    pub fn is_end(&self, cell: &ViewIndex) -> Result<bool, Error> {
+    pub(in super) fn is_end(&self, cell: &dyn super::viewing::Index) -> Result<bool, Error> {
         let index = Self::valid_level(cell)?;
 
         let index =
         self.cells
             .into_timed(index)
-            .map_err(|_| Error::NoSuchCell(cell.clone()))?;
+            .map_err(|_| Error::NoSuchCell(ViewIndex::Ground(index)))?;
 
         Ok(
             self.cells
                 .try_first_index()
-                .map(|first| first == index)
+                .map(|first| self.cells.indices_eq(first, index).unwrap())
                 .unwrap_or(false)
         )
     }
 
-    pub fn is_bottom(&self, cells: &Selection) -> Result<bool, Error> {
+    pub(in super) fn is_bottom(&self, cells: &Selection) -> Result<bool, Error> {
         let index = Self::valid_level(cells)?;
 
         let index =
@@ -142,15 +153,15 @@ impl<Data> Tower<Data> {
         Ok(
             self.cells
                 .try_last_index()
-                .map(|last| last == index)
+                .map(|last| self.cells.indices_eq(last, index).unwrap())
                 .unwrap_or(false)
         )
     }
 
-    pub fn is_middle(&self, cell: &Selection) -> Result<bool, Error> {
-        // Ok(!(self.is_end(cell)? || self.is_bottom(cell)?))
+    pub(in super) fn is_middle(&self, cell: &Selection) -> Result<bool, Error> {
+        let index = Self::valid_level(cell)?;
 
-        todo!()
+        Ok(!self.is_bottom(&Selection::Ground(index))?)
     }
 
     pub fn contents_of(&self, index: &[TimelessIndex]) -> Option<Vec<ViewIndex>> {
@@ -174,8 +185,9 @@ impl<Data> Tower<Data> {
 // IMPL: Utils
 //
 impl<Data> Tower<Data> {
-    fn extract(sel: &Selection) -> Result<TimelessIndex, Error> {
-        sel .as_ground()
+    fn extract(sel: &dyn super::viewing::Index) -> Result<TimelessIndex, Error> {
+        sel
+            .as_ground()
             .ok_or(Error::TooMuchDepth(sel.level()))
     }
 
@@ -188,13 +200,12 @@ impl<Data> Tower<Data> {
         }
     }
 
-    fn as_ground(&self, index: &ViewIndex) -> Result<TimelessIndex, Error> {
-        index
-            .as_ground()
-            .ok_or(Error::TooMuchDepth(index.level()))
-    }
+    pub fn is_before(&self, before: &ViewIndex, after: &ViewIndex) -> bool {
+        let before = before.as_ground().unwrap();
+        let after = after.as_ground().unwrap();
 
-    fn_is_before! { as_ground }
+        self.cells.is_before(before, after).unwrap()
+    }
 }
 
 impl<Data: Clone> Tower<Data> {

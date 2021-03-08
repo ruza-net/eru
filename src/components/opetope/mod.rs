@@ -60,18 +60,17 @@ pub enum Error {
     IndexError(IndexError),
 
     TooMuchDepth(usize),
-    CannotEditInner(usize),
 
     NoSuchCell(ViewIndex),
     CannotSproutGroup(ViewIndex),
+    NoCellWithInputs(Vec<ViewIndex>),
+
+    CannotSplitBoundaryCells(viewing::Selection),
     CannotExtrudeNestedCells(viewing::Selection),
 
     CannotGroupDisconnected(Vec<ViewIndex>),
-
     CellsDoNotFormTree(Vec<ViewIndex>),
-    CellsDoNotHaveOutput(Vec<TimelessIndex>),
 
-    NoLayerBeneath,
     CannotConvertAlreadyGrouped,
 }
 
@@ -92,6 +91,7 @@ pub enum EditResult<O, Data> {
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Action {
     Extrude { group: ViewIndex, contents: Vec<ViewIndex> },
+    Split { group: ViewIndex, contents: Vec<ViewIndex> },
     Sprout { group: ViewIndex, end: ViewIndex },
     Delete { cell: ViewIndex },
 
@@ -100,7 +100,7 @@ pub enum Action {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Interaction {
-    InPrevious { action: Action, wrap: ViewIndex },
+    InPrevious { action: Action, wraps: Vec<ViewIndex> },
 
     Here { action: Action },
 }
@@ -130,9 +130,7 @@ impl<Data> Tail<Data> {
 
         has_groups() -> bool,
 
-        is_end(cell: &ViewIndex) -> Result<bool, Error>,
-        is_before(before: &ViewIndex, after: &ViewIndex) -> bool,
-        contents_of(index: &[TimelessIndex]) -> Option<Vec<ViewIndex>>
+        is_before(before: &ViewIndex, after: &ViewIndex) -> bool
     }
 }
 
@@ -155,6 +153,7 @@ impl<Data: SimpleView + std::fmt::Debug> Tail<data::Selectable<Data>> {
 impl<Data: Clone> Tail<Data> {
     common_methods! {
         [mut] extrude(cell: &viewing::Selection, group: Data, wrap: Data) -> EditResult<Interaction, Data>,
+        [mut] split(cell: &viewing::Selection, group: Data, wrap_top: Data, wrap_bot: Data) -> EditResult<Interaction, Data>,
         [mut] sprout(cell: &viewing::ViewIndex, end: Data, wrap: Data) -> EditResult<Interaction, Data>
     }
 }
