@@ -7,10 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = { git = "https://github.com/hecrj/iced", rev = "12c0c18d662d2b817b559b94c71d18e122c76990", features = ["image"] }
-iced_native = { git = "https://github.com/hecrj/iced", rev = "12c0c18d662d2b817b559b94c71d18e122c76990" }
+iced = { git = "https://github.com/hecrj/iced", rev = "a5fddf9ee648927b294ef34e8819855d5e117b26", features = ["image", "tokio"] }
+iced_native = { git = "https://github.com/hecrj/iced", rev = "a5fddf9ee648927b294ef34e8819855d5e117b26" }
 
-iced_aw = { git = "https://github.com/Kaiden42/iced_aw", rev = "24a309939a2750cb40e7306d82f438236f45d219" }
+iced_aw = { path = "../../Libs/iced_aw" }
+# iced_aw = { git = "https://github.com/Kaiden42/iced_aw", rev = "84ccfa88055691ea299eb1cd0e1ba8b2342fdc91" }
 
 take_mut = "0.2"
 
