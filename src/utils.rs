@@ -4,6 +4,18 @@ macro_rules! fill {
 }
 
 #[macro_export]
+macro_rules! accessors {
+    ( $($name:ident : $typ:ty),* $(,)? ) => {
+        $(
+            pub fn $name(mut self, $name: $typ) -> Self {
+                self.$name = $name;
+                self
+            }
+        )*
+    };
+}
+
+#[macro_export]
 macro_rules! extract {
     ( $val:expr => $($x:ident),* in $p:pat ) => {
         if let $p = $val { ($($x),*) } else { unreachable![] }
@@ -132,13 +144,18 @@ pub trait EncapsulateIter: Iterator {
 }
 impl<I> EncapsulateIter for I where I: Iterator {}
 
-pub trait ProjectIter<X, Y>: Iterator<Item = (X, Y)> {
-    fn proj_l(self) -> <Vec<X> as IntoIterator>::IntoIter where Self: Sized {
+pub trait ProjectIter<X, Y> {
+    fn proj_l(self) -> <Vec<X> as IntoIterator>::IntoIter;
+
+    fn proj_r(self) -> <Vec<Y> as IntoIterator>::IntoIter;
+}
+
+impl<X, Y, I> ProjectIter<X, Y> for I where I: Iterator<Item = (X, Y)> {
+    fn proj_l(self) -> <Vec<X> as IntoIterator>::IntoIter {
         self.map(|(x, _)| x).encapsulate()
     }
 
-    fn proj_r(self) -> <Vec<Y> as IntoIterator>::IntoIter where Self: Sized {
+    fn proj_r(self) -> <Vec<Y> as IntoIterator>::IntoIter {
         self.map(|(_, y)| y).encapsulate()
     }
 }
-impl<X, Y, I> ProjectIter<X, Y> for I where I: Iterator<Item = (X, Y)> {}
