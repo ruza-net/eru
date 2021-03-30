@@ -96,7 +96,7 @@ impl Icon {
                 .height(Length::Fill)
                 .into(),
 
-            Data::Element(el) => el.view(),
+            Data::Element(el) => el.view().1,
 
             Data::Text(txt) => {
                 let mut txt = iced::Text::new(txt.clone())
