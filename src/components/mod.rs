@@ -1,6 +1,6 @@
-mod app;
+pub mod app;
 
-pub mod modal;
+pub mod pop_up;
 pub mod general;
 pub mod sidebar;
 pub mod opetope;
