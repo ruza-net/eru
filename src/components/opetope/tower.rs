@@ -2,6 +2,7 @@ use super::{
     *,
     viewing::{ ViewIndex, Selection, Index }
 };
+use serde::{ Serialize, Deserialize };
 
 
 macro_rules! interaction {
@@ -50,7 +51,7 @@ macro_rules! interaction {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tower<Data> {
     cells: TracingVec<Data>,
 }
@@ -122,10 +123,6 @@ impl<Data> Tower<Data> {
         0
     }
 
-    pub fn has_groups(&self) -> bool {
-        self.cells.len() > 1
-    }
-
     pub(in super) fn is_end(&self, cell: &dyn super::viewing::Index) -> Result<bool, Error> {
         let index = Self::valid_level(cell)?;
 
@@ -182,6 +179,17 @@ impl<Data> Tower<Data> {
     }
 }
 
+impl<Data: Clone> Tower<Data> {
+    pub fn cell(&self, cell: &ViewIndex) -> Result<Cell<Data>, Error> {
+        let index = Self::valid_level(cell)?;
+
+        self.cells
+            .get(index)
+            .map(|data| Cell::Ground(data.clone()))
+            .map_err(|e| Error::IndexError(e))
+    }
+}
+
 // IMPL: Utils
 //
 impl<Data> Tower<Data> {
@@ -205,6 +213,12 @@ impl<Data> Tower<Data> {
         let after = after.as_ground().unwrap();
 
         self.cells.is_before(before, after).unwrap()
+    }
+
+    pub fn is_at_bottom(&self, cells: &Selection) -> Result<bool, Error> {
+        let index = Self::valid_level(cells)?;
+
+        Ok(self.cells.into_timeless(self.cells.last_index()).unwrap() == index)
     }
 }
 
@@ -267,13 +281,16 @@ pub mod viewing {
     use super::*;
     use super::super::viewing::Message;
 
+    use crate::model::Render;
     use crate::behavior::SimpleView;
 
+
+    use crate::styles::container::PADDING;
 
     impl<Data> Tower<data::Selectable<Data>>
     where Data: SimpleView
     {
-        pub fn view(&mut self) -> iced::Element<Message> {
+        pub fn view(&mut self, render: Render) -> iced::Element<Message> {
             let mut tower = self
                 .cells
                 .iter_mut_timeless_indices()
@@ -281,13 +298,30 @@ pub mod viewing {
 
             let (top_idx, top_data) = tower.next().unwrap();
 
-            let mut downmost_cell: iced::Element<_>
-                = top_data.view_cell(top_idx, None);
+            let ((_, mut width), mut downmost_cell) = top_data.view_cell(top_idx, 0, None, render);
+
 
             while let Some((idx, data)) = tower.next() {
-                downmost_cell
-                    = data.view_cell(idx, Some(downmost_cell));
+                let ((_, new_width), new_downmost_cell) =
+                data.view_cell(
+                    idx,
+                    width,
+                    Some(
+                        iced::Container::new(downmost_cell)
+                        .padding(PADDING)
+                        .into()
+                    ),
+                    render
+                );
+
+                width = new_width;
+                downmost_cell = new_downmost_cell;
             }
+
+            downmost_cell =
+            iced::Container::new(downmost_cell)
+                .width(iced::Length::Shrink)
+                .into();
 
             downmost_cell
         }

@@ -3,55 +3,17 @@ use tracing_vec::*;
 use crate::behavior::SimpleView;
 
 pub mod data;
-pub mod index {
-    use super::*;
-
-    pub mod local {
-        use super::*;
-
-
-        #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) ViewIndex);
-
-        impl Cell {
-            pub fn into_prev(self) -> super::prev::Cell {
-                super::prev::Cell(self.0)
-            }
-        }
-
-        impl From<ViewIndex> for Cell {
-            fn from(addr: ViewIndex) -> Self {
-                Self(addr)
-            }
-        }
-    }
-
-    pub mod prev {
-        use super::*;
-
-        #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-        pub struct Cell(pub(in super::super) ViewIndex);
-
-        impl Cell {
-            pub fn into_local(self) -> super::local::Cell {
-                super::local::Cell(self.0)
-            }
-        }
-
-        impl From<ViewIndex> for Cell {
-            fn from(addr: ViewIndex) -> Self {
-                Self(addr)
-            }
-        }
-    }
-}
 
 mod tower;
 pub use tower::Tower;
 
 mod line;
-mod diagram;
-pub use diagram::Diagram;
+
+mod spacer;
+use spacer::Spacer;
+
+pub mod diagram;
+pub use diagram::{ Diagram, Face, MetaCell };
 
 
 
@@ -74,12 +36,6 @@ pub enum Error {
     CannotConvertAlreadyGrouped,
 }
 
-#[derive(Debug, Clone)]
-pub enum Tail<Data> {
-    Tower(Tower<Data>),
-    Diagram(Box<Diagram<Data>>),
-}
-
 #[must_use = "this `EditResult` might be an `Err` variant which should be handled"]
 #[derive(Debug, Clone)]
 pub enum EditResult<O, Data> {
@@ -88,14 +44,22 @@ pub enum EditResult<O, Data> {
     Err(Error),
 }
 
+
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Tail<Data> {
+    Tower(Tower<Data>),
+    Diagram(Box<Diagram<Data>>),
+}
+
+
+
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Action {
     Extrude { group: ViewIndex, contents: Vec<ViewIndex> },
     Split { group: ViewIndex, contents: Vec<ViewIndex> },
     Sprout { group: ViewIndex, end: ViewIndex },
     Delete { cell: ViewIndex },
-
-    // NOTE: Split is represented by two actions.
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -103,6 +67,25 @@ pub enum Interaction {
     InPrevious { action: Action, wraps: Vec<ViewIndex> },
 
     Here { action: Action },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Cell<Data> {
+    Ground(Data),
+    Leveled(MetaCell<Data>),
+}
+
+
+#[derive(Debug, Clone)]
+pub struct IterGroups<'op, Data> {
+    level: usize,
+    cells: Vec<(Vec<TimelessIndex>, &'op diagram::Cell<Data>)>,
+}
+
+#[derive(Debug)]
+pub struct IterMutGroups<'op, Data> {
+    level: usize,
+    cells: Vec<(Vec<TimelessIndex>, &'op mut diagram::Cell<Data>)>,
 }
 
 
@@ -128,9 +111,16 @@ impl<Data> Tail<Data> {
     common_methods! {
         level() -> usize,
 
-        has_groups() -> bool,
+        is_before(before: &ViewIndex, after: &ViewIndex) -> bool,
+        is_at_bottom(cell: &viewing::Selection) -> Result<bool, Error>
+    }
+}
 
-        is_before(before: &ViewIndex, after: &ViewIndex) -> bool
+// IMPL: Accessing
+//
+impl<Data: Clone> Tail<Data> {
+    common_methods! {
+        cell(cell: &ViewIndex) -> Result<Cell<Data>, Error>
     }
 }
 
@@ -144,7 +134,7 @@ impl<Data: Clone> Tail<Data> {
 //
 impl<Data: SimpleView + std::fmt::Debug> Tail<data::Selectable<Data>> {
     common_methods! {
-        [mut] view() -> iced::Element<viewing::Message>
+        [mut] view(render: crate::model::Render) -> iced::Element<viewing::Message>
     }
 }
 
@@ -234,12 +224,144 @@ impl<O, Data> From<Result<O, Error>> for EditResult<O, Data> {
 }
 
 
+impl<'op, Data: 'op> Iterator for IterGroups<'op, Data> {
+    type Item = (Face, &'op MetaCell<Data>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((path, cell)) = self.cells.pop() {
+            if let Some(content) = &cell.content {
+                let mut ends = vec![];
+                let level = self.level;
+
+                let inner_cells = content
+                    .iter_timeless_indices()
+                    .map(|(index, cell)| (
+                        {
+                            let mut path = path.clone();
+                            path.push(index);
+
+                            ends.push(
+                                ViewIndex::Leveled {
+                                    level,
+                                    path: path.clone(),
+                                }
+                            );
+
+                            path
+                        },
+                        cell,
+                    ));
+                
+                self.cells.extend(inner_cells);
+
+                let fill =
+                ViewIndex::Leveled {
+                    level,
+                    path,
+                };
+
+                let face = Face {
+                    fill,
+                    ends,
+                };
+
+                return
+                    Some((
+                        face,
+                        &cell.meta,
+                    ))
+            }
+        }
+
+        None
+    }
+}
+
+impl<'op, Data: 'op> Iterator for IterMutGroups<'op, Data> {
+    type Item = (Face, &'op mut MetaCell<Data>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((path, cell)) = self.cells.pop() {
+            if let Some(content) = &mut cell.content {
+                let mut ends = vec![];
+                let level = self.level;
+
+                let inner_cells = content
+                    .iter_mut_timeless_indices()
+                    .map(|(index, cell)| (
+                        {
+                            let mut path = path.clone();
+                            path.push(index);
+
+                            ends.push(
+                                ViewIndex::Leveled {
+                                    level,
+                                    path: path.clone(),
+                                }
+                            );
+
+                            path
+                        },
+                        cell,
+                    ));
+                
+                self.cells.extend(inner_cells);
+
+                let fill =
+                ViewIndex::Leveled {
+                    level,
+                    path,
+                };
+
+                let face = Face {
+                    fill,
+                    ends,
+                };
+
+                return
+                    Some((
+                        face,
+                        &mut cell.meta,
+                    ))
+            }
+        }
+
+        None
+    }
+}
+
+
+impl<Data> Cell<Data> {
+    pub fn data(&self) -> &Data {
+        match self {
+            Self::Ground(data) => data,
+            Self::Leveled(meta) => &meta.data,
+        }
+    }
+
+    pub fn to_data(self) -> Data {
+        match self {
+            Self::Ground(data) => data,
+            Self::Leveled(meta) => meta.data,
+        }
+    }
+
+    pub fn face(&self) -> Option<&Face> {
+        match self {
+            Self::Ground(_) => None,
+            Self::Leveled(meta) => Some(meta.face()),
+        }
+    }
+}
+
+
+
 pub use viewing::{ Message, ViewIndex, Selection };
 pub mod viewing {
     use super::*;
     use std::fmt;
 
-    #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
     pub enum ViewIndex {
         Ground(TimelessIndex),
         Leveled { level: usize, path: Vec<TimelessIndex> },

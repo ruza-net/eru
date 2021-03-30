@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use crate::utils::{ EncapsulateIter, ProjectIter };
 
+use serde::{ Serialize, Deserialize };
 use super::{ *, viewing::{ ViewIndex, Selection, Index } };
 
 
@@ -34,25 +35,29 @@ macro_rules! interaction {
 }
 
 
-
-#[derive(Debug, Clone)]
-struct Face {
-    ends: Vec<ViewIndex>,
-    fill: ViewIndex,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Face {
+    pub ends: Vec<ViewIndex>,
+    pub fill: ViewIndex,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetaCell<Data> {
-    data: Data,
-    face: Face,
+    pub data: Data,
+    pub face: Face,
+}
 
-    content: Option<TracingVec<Self>>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(in super) struct Cell<Data> {
+    pub meta: MetaCell<Data>,
+
+    pub content: Option<TracingVec<Self>>,
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagram<Data> {
-    cells: TracingVec<MetaCell<Data>>,
+    cells: TracingVec<Cell<Data>>,
 
     prev: Tail<Data>,
 }
@@ -63,10 +68,6 @@ pub struct Diagram<Data> {
 //
 impl<Data> Diagram<Data> {
     pub fn new(tail: Tail<Data>) -> Result<Self, Error> {
-        if tail.has_groups() {
-            return Err(Error::CannotConvertAlreadyGrouped);
-        }
-
         Ok(Self {
             prev: tail,
             cells: fill![],
@@ -81,7 +82,7 @@ impl<Data> Diagram<Data> {
         self.prev.level() + 1
     }
 
-    pub fn get(&self, path: &[TimelessIndex]) -> Option<&MetaCell<Data>> {
+    pub(in super) fn get(&self, path: &[TimelessIndex]) -> Option<&Cell<Data>> {
         let mut acc =
         self.cells
             .get(*path.first()?)
@@ -94,7 +95,7 @@ impl<Data> Diagram<Data> {
         Some(acc)
     }
 
-    pub fn get_mut(&mut self, path: &[TimelessIndex]) -> Option<&mut MetaCell<Data>> {
+    pub(in super) fn get_mut(&mut self, path: &[TimelessIndex]) -> Option<&mut Cell<Data>> {
         let mut acc =
         self.cells
             .get_mut(*path.first()?)
@@ -107,24 +108,67 @@ impl<Data> Diagram<Data> {
         Some(acc)
     }
 
-    pub fn has_groups(&self) -> bool {
-        self
-            .cells
-            .iter()
-            .any(|cell| cell.is_group())
+    pub fn iter_groups(&self) -> IterGroups<Data> {
+        IterGroups {
+            level: self.level() - 1,
+            cells: self
+                .cells
+                .iter_timeless_indices()
+                .map(|(index, cell)| (vec![index], cell))
+                .collect(),
+        }
+    }
+
+    pub fn iter_mut_groups(&mut self) -> IterMutGroups<Data> {
+        IterMutGroups {
+            level: self.level(),
+            cells: self
+                .cells
+                .iter_mut_timeless_indices()
+                .map(|(index, cell)| (vec![index], cell))
+                .collect(),
+        }
+    }
+}
+
+impl<Data: Clone> Diagram<Data> {
+    pub fn cell(&self, cell: &ViewIndex) -> Result<super::Cell<Data>, Error> {
+        if cell.level() == self.level() {
+            let path = self.valid_level(cell).unwrap();
+
+            self.get(&path)
+                .map(|cell| super::Cell::Leveled(cell.meta.clone()))
+                .ok_or(Error::NoSuchCell(cell.clone()))
+
+        } else if cell.level() < self.level() {
+            self.prev.cell(cell)
+
+        } else {
+            Err(Error::TooMuchDepth(cell.level()))
+        }
     }
 }
 
 // IMPL: Transforming
 //
 impl<Data> Diagram<Data> {
-    pub fn into_next(self) -> Result<Diagram<Data>, Error> {
-        if let Ok(ret) = Self::new(Tail::Diagram(Box::new(self))) {
-            Ok(ret)
+    pub fn into_next(&mut self, wraps: Vec<MetaCell<Data>>) -> Result<(), Error> {
+        take_mut::take(self, |this| {
+            let mut next = Self {
+                prev: Tail::Diagram(Box::new(this)),
+                cells: fill![],
+            };
 
-        } else {
-            Err(Error::CannotConvertAlreadyGrouped)// TODO: Post-hoc wrapping
-        }
+            for wrap in wraps {
+                let MetaCell { data, face: Face { ends, fill } } = wrap;
+
+                next.wrap_extrusion(data, &ends, fill);// NOTE: If this panics, program aborts.
+            }
+
+            next
+        });
+
+        Ok(())
     }
 }
 
@@ -203,7 +247,15 @@ impl<Data: Clone> Diagram<Data> {
         }
 
         in self {
-            todo!()
+            match self.group(&cells.as_paths(), group.into()) {
+                Ok((group, contents)) =>
+                    EditResult::Ok(Interaction::Here {
+                        action: Action::Split { group, contents },
+                    }),
+
+                Err(e) =>
+                    EditResult::Err(e),
+            }
         }
     }
 
@@ -239,12 +291,16 @@ impl<Data: Clone> Diagram<Data> {
             }
 
             if let Some(cell) = self.get_mut(&index.path()) {
-                let face = cell.face.clone();
+                let face = cell.face().clone();
 
-                let end = MetaCell {
-                    data: end.into(),
+                let end = Cell {
+                    meta:
+                        MetaCell {
+                            data: end.into(),
 
-                    face,
+                            face,
+                        },
+
                     content: None,
                 };
 
@@ -280,7 +336,7 @@ impl<Data: Clone> Diagram<Data> {
             cell_space
                 .iter_timeless_indices()
                 .filter(|(index, _)| cells.contains(index))
-                .map(|(_, cell)| &cell.face)
+                .map(|(_, cell)| cell.face())
         );
 
         let mut inner = vec![];
@@ -292,7 +348,7 @@ impl<Data: Clone> Diagram<Data> {
 
                 inner = content.timeless_indices().collect();
 
-                MetaCell { data, face, content: Some(content) }
+                Cell { meta: MetaCell { data, face }, content: Some(content) }
             })
             .map_err(Error::IndexError)?;
 
@@ -317,7 +373,9 @@ impl<Data: Clone> Diagram<Data> {
 
         Ok((self.into_index(group_path), contents_indices))
     }
+}
 
+impl<Data> Diagram<Data> {
     fn wrap_sprout(&mut self, data: Data, old_end_line: &ViewIndex, sprouted_line: ViewIndex) -> ViewIndex {
         let mut cells_below =
         self.cells
@@ -325,7 +383,7 @@ impl<Data: Clone> Diagram<Data> {
 
         let mut cells_with_fill_before = cells_below
             .take_while_ref(|(_, cell)|
-                !cell.face.ends.contains(old_end_line)
+                !cell.face().ends.contains(old_end_line)
             )
             .encapsulate();
 
@@ -333,7 +391,7 @@ impl<Data: Clone> Diagram<Data> {
         // NOTE: `cells_with_fill_before` are the upstream cells and the parallel cells.
 
         let cells_with_end_after = cells_with_fill_before
-            .take_while_ref(|(_, cell)| !self.has_fill_before(cell, old_end_line))
+            .take_while_ref(|(_, cell)| !self.has_fill_before(&cell.meta, old_end_line))
             .encapsulate();
 
         // NOTE: `cells_with_fill_before` are now cells between the downstream cells and the
@@ -347,16 +405,18 @@ impl<Data: Clone> Diagram<Data> {
 
         let cells_with_fill_before = cells_with_fill_before.proj_l();
 
-        let wrap = MetaCell {
-            data,
-            face: Face {
-                ends: vec![sprouted_line],
-                fill: old_end_line.clone(),
-            },
+        let wrap = Cell {
+            meta:
+                MetaCell {
+                    data,
+                    face: Face {
+                        ends: vec![sprouted_line],
+                        fill: old_end_line.clone(),
+                    },
+                },
 
             content: None,
         };
-
 
         let inserted =
         if let Some(preceding) = cells_with_fill_before.last() {
@@ -390,7 +450,7 @@ impl<Data: Clone> Diagram<Data> {
 
         let cells_above = cells_next_to
             .take_while_ref(|(_, cell)| cell
-                .face
+                .face()
                 .ends
                 .iter()
                 .all(|end| self.prev.is_before(end, &lowest_fill_line))
@@ -398,17 +458,20 @@ impl<Data: Clone> Diagram<Data> {
             .proj_l();
 
         let cells_after = cells_next_to
-            .take_while_ref(|(_, cell)| self.prev.is_before(&lowest_fill_line, &cell.face.fill))
+            .take_while_ref(|(_, cell)| self.prev.is_before(&lowest_fill_line, &cell.face().fill))
             .proj_l();
 
         let mut cells_next_to = cells_next_to.proj_l();
 
-        let wrap = MetaCell {
-            data,
-            face: Face {
-                ends: old_fill_lines.to_vec(),
-                fill: created_line,
-            },
+        let wrap = Cell {
+            meta:
+                MetaCell {
+                    data,
+                    face: Face {
+                        ends: old_fill_lines.to_vec(),
+                        fill: created_line,
+                    },
+                },
 
             content: None,
         };
@@ -436,26 +499,36 @@ impl<Data: Clone> Diagram<Data> {
     }
 
     fn wrap_split(&mut self, wrap_top: Data, wrap_bot: Data, upstream_lines: &[ViewIndex], created_line: ViewIndex) -> [ViewIndex; 2] {
-        let (path, old_wrap) = self.cell_with_inputs_mut(upstream_lines).unwrap();
+        let (path, old_wrap, prefix, postfix) = self.cell_with_inputs_mut(upstream_lines).unwrap();
 
-        let wrap_top = MetaCell {
-            data: wrap_top,
+        let wrap_top = Cell {
+            meta:
+                MetaCell {
+                    data: wrap_top,
+                    face: Face {
+                        ends: upstream_lines.to_vec(),
+                        fill: created_line.clone(),
+                    },
+                },
+
             content: None,
-
-            face: Face {
-                ends: upstream_lines.to_vec(),
-                fill: created_line.clone(),
-            },
         };
 
-        let wrap_bot = MetaCell {
-            data: wrap_bot,
-            content: None,
+        let mut ends = prefix;
+        ends.push(created_line);
+        ends.extend(postfix);
 
-            face: Face {
-                ends: vec![created_line],
-                fill: old_wrap.face.fill.clone(),
-            },
+        let wrap_bot = Cell {
+            meta:
+                MetaCell {
+                    data: wrap_bot,
+                    face: Face {
+                        ends,
+                        fill: old_wrap.face().fill.clone(),
+                    },
+                },
+
+            content: None,
         };
 
         let content = TracingVec::from(vec![wrap_top, wrap_bot]);
@@ -489,9 +562,9 @@ impl<Data: Clone> Diagram<Data> {
 impl<Data> Diagram<Data> {
     fn replace_line(&mut self, line: &[TimelessIndex], new: &[TimelessIndex]) -> Result<(), Error> {
         for cell in self.cells.iter_mut() {
-            cell.face.fill.subst_prefix(line, new);
+            cell.face_mut().fill.subst_prefix(line, new);
 
-            cell.face
+            cell.face_mut()
                 .ends
                 .iter_mut()
                 .for_each(|end| end.subst_prefix(line, new));
@@ -522,15 +595,22 @@ impl<Data> Diagram<Data> {
         self.prev.is_before(&cell.face.fill, end)
     }
 
-    fn cell_with_inputs_mut(&mut self, inputs: &[ViewIndex]) -> Result<(Vec<TimelessIndex>, &mut MetaCell<Data>), Error> {
+    fn cell_with_inputs_mut(&mut self, inputs: &[ViewIndex]) -> Result<(Vec<TimelessIndex>, &mut Cell<Data>, Vec<ViewIndex>, Vec<ViewIndex>), Error> {
         for (index, cell) in self.cells.iter_mut_timeless_indices() {
-            if cell.is_end() && cell.face.ends == inputs {
-                return Ok((vec![index], cell))
+            if cell.is_end() {
+                for (i, sub) in cell.face().ends.windows(inputs.len()).enumerate() {
+                    if sub == inputs {
+                        let prefix = cell.face().ends[.. i].to_vec();
+                        let postfix = cell.face().ends[i + inputs.len() ..].to_vec();
 
-            } else if let Ok((mut path, cell)) = cell.cell_with_inputs_mut(inputs) {
+                        return Ok((vec![index], cell, prefix, postfix));
+                    }
+                }
+
+            } else if let Ok((mut path, cell, prefix, postfix)) = cell.cell_with_inputs_mut(inputs) {
                 path.insert(0, index);
 
-                return Ok((path, cell))
+                return Ok((path, cell, prefix, postfix))
             }
         }
 
@@ -538,7 +618,7 @@ impl<Data> Diagram<Data> {
     }
 
 
-    fn cell_space(&self, path: &[TimelessIndex]) -> &TracingVec<MetaCell<Data>> {
+    fn cell_space(&self, path: &[TimelessIndex]) -> &TracingVec<Cell<Data>> {
         if let Some(owner) = self.get(path) {
             owner
                 .content
@@ -550,7 +630,7 @@ impl<Data> Diagram<Data> {
         }
     }
 
-    fn cell_space_mut(&mut self, path: &[TimelessIndex]) -> &mut TracingVec<MetaCell<Data>> {
+    fn cell_space_mut(&mut self, path: &[TimelessIndex]) -> &mut TracingVec<Cell<Data>> {
         if self.get(path).is_some() {
             let owner =
             self.get_mut(path)
@@ -564,6 +644,22 @@ impl<Data> Diagram<Data> {
         } else {
             &mut self.cells
         }
+    }
+
+
+    fn input_count(&self) -> usize {
+        let outputs =
+        self.cells
+            .iter()
+            .map(|cell| &cell.face().fill)
+            .collect_vec();
+
+        self.cells
+            .iter()
+            .map(|cell| &cell.face().ends)
+            .flatten()
+            .filter(|line| !outputs.contains(line))
+            .count()
     }
 
 
@@ -581,14 +677,14 @@ impl<Data> Diagram<Data> {
         let inputs: Vec<_> =
         cells
             .iter()
-            .map(|path| &self.get(path).unwrap().face.ends)
+            .map(|path| &self.get(path).unwrap().face().ends)
             .flatten()
             .collect();
 
         let dangling =
         cells
             .iter()
-            .map(|path| &self.get(path).unwrap().face.fill)
+            .map(|path| &self.get(path).unwrap().face().fill)
             .filter(|line| !inputs.contains(line))
             .count();
 
@@ -673,6 +769,29 @@ impl<Data> Diagram<Data> {
         }
     }
 
+    pub fn is_at_bottom(&self, cells: &Selection) -> Result<bool, Error> {
+        if cells.level() > self.level() {
+            Err(Error::TooMuchDepth(cells.level()))
+
+        } else if cells.level() == self.level() {
+            let bottom =
+            self.cells
+                .timeless_indices()
+                .map(|index| self.into_index(vec![index]))
+                .collect_vec();
+
+            Ok(
+                cells
+                    .as_cells()
+                    .iter()
+                    .all(|cell| bottom.contains(cell))
+            )
+
+        } else {
+            self.prev.is_at_bottom(cells)
+        }
+    }
+
     fn remove_common_prefix<X>(path_a: &mut Vec<X>, path_b: &mut Vec<X>) -> Vec<X> where X: PartialEq {
         path_a.reverse();
         path_b.reverse();
@@ -736,7 +855,7 @@ impl<Data> Diagram<data::Selectable<Data>> {
                 .get_mut(&cell.path())
                 .ok_or(Error::NoSuchCell(cell.clone()))?;
 
-            cell.data
+            cell.data_mut()
                 .select();// TODO: Select all cells between `cell` and the boundary of `self.selected_cells()`.
 
             Ok(self.selected_cells())
@@ -809,14 +928,33 @@ impl<Data> Diagram<data::Selectable<Data>> {
 
 // IMPL: Accessing
 //
-impl<Data> MetaCell<Data> {
-    fn is_end(&self) -> bool {
+impl<Data> Cell<Data> {
+    const fn is_end(&self) -> bool {
         !self.is_group()
     }
 
-    fn is_group(&self) -> bool {
+    const fn is_group(&self) -> bool {
         self.content.is_some()
     }
+
+
+    const fn face(&self) -> &Face {
+        &self.meta.face
+    }
+
+    fn face_mut(&mut self) -> &mut Face {
+        &mut self.meta.face
+    }
+
+
+    const fn data(&self) -> &Data {
+        &self.meta.data
+    }
+
+    fn data_mut(&mut self) -> &mut Data {
+        &mut self.meta.data
+    }
+
 
     fn get(&self, seg: TimelessIndex) -> Option<&Self> {
         self.content
@@ -833,19 +971,36 @@ impl<Data> MetaCell<Data> {
     }
 }
 
+impl<Data> MetaCell<Data> {
+    pub const fn face(&self) -> &Face {
+        &self.face
+    }
+
+    pub const fn data(&self) -> &Data {
+        &self.data
+    }
+}
+
 // IMPL: Utils
 //
-impl<Data> MetaCell<Data> {
-    fn cell_with_inputs_mut(&mut self, inputs: &[ViewIndex]) -> Result<(Vec<TimelessIndex>, &mut MetaCell<Data>), Error> {
+impl<Data> Cell<Data> {
+    fn cell_with_inputs_mut(&mut self, inputs: &[ViewIndex]) -> Result<(Vec<TimelessIndex>, &mut Cell<Data>, Vec<ViewIndex>, Vec<ViewIndex>), Error> {
         if let Some(cells) = &mut self.content {
             for (index, cell) in cells.iter_mut_timeless_indices() {
-                if cell.is_end() && cell.face.ends == inputs {
-                    return Ok((vec![index], cell))
+                if cell.is_end() {
+                    for (i, sub) in cell.face().ends.windows(inputs.len()).enumerate() {
+                        if sub == inputs {
+                            let prefix = cell.face().ends[.. i].to_vec();
+                            let postfix = cell.face().ends[i + inputs.len() ..].to_vec();
 
-                } else if let Ok((mut path, cell)) = cell.cell_with_inputs_mut(inputs) {
+                            return Ok((vec![index], cell, prefix, postfix));
+                        }
+                    }
+
+                } else if let Ok((mut path, cell, prefix, postfix)) = cell.cell_with_inputs_mut(inputs) {
                     path.insert(0, index);
 
-                    return Ok((path, cell))
+                    return Ok((path, cell, prefix, postfix))
                 }
             }
         }
@@ -856,9 +1011,9 @@ impl<Data> MetaCell<Data> {
     fn replace_line(&mut self, line: &[TimelessIndex], new: &[TimelessIndex]) -> Result<(), Error> {
         if let Some(content) = &mut self.content {
             for cell in content.iter_mut() {
-                cell.face.fill.subst_prefix(line, new);
+                cell.face_mut().fill.subst_prefix(line, new);
 
-                cell.face
+                cell.face_mut()
                     .ends
                     .iter_mut()
                     .for_each(|end| end.subst_prefix(line, new));
@@ -873,9 +1028,9 @@ impl<Data> MetaCell<Data> {
 
 // IMPL: Selections
 //
-impl<Data> MetaCell<data::Selectable<Data>> {
+impl<Data> Cell<data::Selectable<Data>> {
     fn unselect_all(&mut self) {
-        self.data.unselect();
+        self.data_mut().unselect();
 
         if let Some(content) = &mut self.content {
             content
@@ -885,7 +1040,7 @@ impl<Data> MetaCell<data::Selectable<Data>> {
     }
 
     fn selected(&self) -> bool {
-        self.data.selected()
+        self.data().selected()
     }
 
     fn selected_cells(&self) -> Vec<Vec<TimelessIndex>> {
@@ -959,24 +1114,283 @@ impl Face {
 
 pub mod viewing {
     use super::*;
-    use crate::components::opetope::viewing::Message;
+    use std::ops;
+
+    use crate::components::opetope::{
+        Spacer,
+        viewing::Message,
+    };
 
     use crate::behavior;
+    use crate::model::Render;
 
-    use crate::styles::container::cell::SPACING;
+    use crate::styles::container::{
+        PADDING,
+        LINE_WIDTH,
+        cell::{ SPACING },
+    };
 
 
-    const LINE_LEN: u16 = 3 * SPACING / 2;
+
+    fn pad<'e>(e: impl Into<iced::Element<'e, Message>>) -> iced::Element<'e, Message> {
+        iced::Row::with_children(vec![padder(), e.into(), padder()])
+        .spacing(PADDING)
+        .into()
+    }
+
+    fn padder() -> iced::Element<'static, Message> {
+        iced::Space::new(0.into(), 0.into()).into()
+    }
+
+    pub fn view_line(height: u16) -> iced::Element<'static, Message> {
+        iced::Container::new(
+            iced::Space::new(LINE_WIDTH.into(), height.into())
+        )
+        .style(crate::styles::container::LINE)
+        .into()
+    }
+
+    #[cfg(debug_assertions)]
+    fn spacer(width: u16, left: bool) -> iced::Element<'static, Message> {
+        iced::Container::new(
+            iced::Space::new(width.into(), 3.into())
+        )
+        .style(if left { crate::styles::container::DEBUG_1 } else { crate::styles::container::DEBUG_2 })
+        .into()
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn spacer(width: u16) -> iced::Element<'static, Message> {
+        iced::Space::with_width(width.into())
+        .into()
+    }
+
+
+    const DEFAULT_WIDTH: u16 = 0;
+
+    #[derive(Debug, Clone)]
+    struct LineMargin {
+        upstream: Vec<Self>,
+
+        min_left: u16,
+        min_right: u16,
+
+        delta: u16,
+    }
+    impl Default for LineMargin {
+        fn default() -> Self {
+            Self {
+                min_left: DEFAULT_WIDTH / 2,
+                min_right: DEFAULT_WIDTH / 2,
+
+                upstream: vec![],
+
+                delta: 0,
+            }
+        }
+    }
+    impl ops::AddAssign<u16> for LineMargin {
+        fn add_assign(&mut self, rhs: u16) {
+            self.delta += rhs.saturating_sub(self.min_left + self.min_right + self.delta);
+        }
+    }
+    impl LineMargin {
+        fn margin(&self) -> u16 {
+            self.delta / 2 +
+            self.up_margins().max
+            (self.min_left + self.min_right)
+        }
+
+        fn left_delta(&self) -> u16 {
+            self.delta / 2
+        }
+
+        fn right_delta(&self) -> u16 {
+            self.delta - self.left_delta()
+        }
+
+        fn left_margin(&self) -> u16 {
+            self.left_delta() +
+            self.up_margins().max
+            (self.min_left)
+        }
+
+        fn right_margin(&self) -> u16 {
+            self.right_delta() +
+            self.up_margins().max
+            (self.min_right)
+        }
+
+        fn up_margins(&self) -> u16 {
+            // NOTE: Correct because `margin` is `width / 2`.
+            //
+            self.upstream.iter().map(LineMargin::margin).sum()
+        }
+
+        fn flatten(self) -> Vec<Self> {
+            let left_delta = self.left_delta();
+            let right_delta = self.right_delta();
+
+            let Self { mut upstream, mut min_left, mut min_right, .. } = self;
+
+            min_left += left_delta;
+            min_right += right_delta;
+
+            upstream = upstream.into_iter().map(Self::flatten).flatten().collect();
+
+            if upstream.is_empty() {
+                vec![Self { upstream, min_left, min_right, delta: 0 }]
+
+            } else {
+                let up_width = upstream.iter().map(Self::margin).sum::<u16>();
+
+                upstream[0].min_left += min_left.saturating_sub(up_width / 2);
+                upstream.last_mut().unwrap().min_right += min_right.saturating_sub(up_width - up_width / 2);
+
+                upstream
+            }
+        }
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct LineSystem {
+        lines: Vec<LineMargin>,
+    }
+    macro_rules! impl_index {
+        ( $($typ:ty => $($idx:ty)*),* ) => {
+            $(
+                $(
+                    impl ops::Index<$idx> for LineSystem {
+                        type Output = $typ;
+
+                        fn index(&self, index: $idx) -> &Self::Output {
+                            &self.lines[index]
+                        }
+                    }
+
+                    impl ops::IndexMut<$idx> for LineSystem {
+                        fn index_mut(&mut self, index: $idx) -> &mut Self::Output {
+                            &mut self.lines[index]
+                        }
+                    }
+                )*
+            )*
+        };
+    }
+    impl_index! {
+        LineMargin => usize,
+        [LineMargin] => ops::Range<usize> ops::RangeFrom<usize> ops::RangeFull ops::RangeInclusive<usize> ops::RangeTo<usize> ops::RangeToInclusive<usize>
+    }
+    impl LineSystem {
+        fn new(count: usize) -> Self {
+            Self {
+                lines: vec![fill![]; count],
+            }
+        }
+
+        fn group(&mut self, count: usize) {
+            let upstream = self.lines.split_off(self.lines.len() - count);
+
+            self.lines.push(LineMargin { upstream, ..fill![] });
+        }
+
+        fn compute_deltas(&mut self, downstream: &Self) {
+            self.lines
+                .iter_mut()
+                .zip(
+                    downstream
+                        .lines
+                        .iter()
+                )
+                .map(|(this, down)| this.delta = down.margin().saturating_sub(this.margin()))
+                .collect()
+        }
+
+        fn flatten(self) -> Self {
+            let lines =
+            self.lines
+                .into_iter()
+                .map(LineMargin::flatten)
+                .flatten()
+                .collect();
+
+            Self { lines }
+        }
+
+        fn spaces_between(&self) -> Vec<u16> {
+            let mut spaces = vec![];
+
+            for bounds in self.lines.windows(2) {
+                let space = PADDING.max(bounds[0].up_margins() + bounds[1].up_margins());
+
+                spaces.push(space);
+            }
+
+            spaces
+        }
+
+        fn deltas(&self) -> Vec<u16> {
+            let mut spaces = vec![];
+
+            for bounds in self.lines.windows(2) {
+                let space = bounds[0].delta + bounds[1].delta;
+                
+                spaces.push(space);
+            }
+
+            spaces
+        }
+
+        fn spaces_around(&self, widths: &[u16]) -> Vec<u16> {
+            let mut spaces = vec![];
+
+            let count = widths.len();
+            
+            let mut lines =
+            self.lines
+                .iter()
+                .zip(widths)
+                .map(|(line, width)| (line.clone(), *width))
+                .collect_vec();
+
+            lines.insert(0, (fill![], DEFAULT_WIDTH));
+            lines.push((fill![], DEFAULT_WIDTH));
+
+            for (i, win) in lines.windows(2).enumerate() {
+                let in_between = (1 .. count).contains(&i);
+                let resolve = move |margin| {
+                    margin + if in_between { PADDING } else { DEFAULT_WIDTH }
+                };
+
+                let ((left_line, left_local_margin), (right_line, right_local_margin)) = extract!{ win => left, right in [left, right] };
+
+                spaces.push(
+                    resolve(
+                        (
+                            left_line.right_margin() +
+                            right_line.left_margin()
+                        ).saturating_sub(left_local_margin + right_local_margin)
+                    )
+                );
+            }
+
+            spaces
+        }
+    }
+
+
+    pub const LINE_LEN: u16 = 3 * SPACING / 2;
 
     impl<'c, Data: 'c> Diagram<data::Selectable<Data>>
     where Data: behavior::SimpleView + std::fmt::Debug {
 
-        pub fn view(&mut self) -> iced::Element<Message> {
+        pub fn view(&mut self, render: Render) -> iced::Element<Message> {
             let level = self.level() - 1;// NOTE: Since `ViewIndex::Leveled` is shifted left.
+            let input_count = self.input_count();
 
             let prev =
             self.prev
-                .view();
+                .view(render);
 
             let mut cells =
             self.cells
@@ -984,11 +1398,13 @@ pub mod viewing {
                 .map(|(index, data)| (ViewIndex::Leveled { level, path: vec![index] }, data))
                 .collect_vec();
 
+            let mut line_system = Spacer::new(input_count);
+
             let mut parts = vec![];
 
             while !cells.is_empty() {
-                // let this = Self::view_diagram(dbg![&mut cells]);
-                let this = Self::view_diagram(&mut cells);
+                // let (_, _, this) = Self::view_diagram(dbg![&mut cells], &mut line_system, render);
+                let (_, _, this) = Self::view_diagram(&mut cells, &mut line_system, render);
 
                 parts.push(this);
             }
@@ -997,32 +1413,40 @@ pub mod viewing {
 
             let parts =
             if parts.is_empty() {
-                Self::view_line(false)
+                view_line(LINE_LEN)
+
             } else {
                 iced::Row::with_children(parts)
                     .spacing(SPACING * 2)
                     .into()
             };
 
-            iced::Row::new()
-                .spacing(SPACING * 3)
-                .push(prev)
-                .push(parts)
-                .into()
+            iced::Element::from(
+                iced::Row::new()
+                    .spacing(SPACING * 3)
+                    .push(prev)
+                    .push(parts)
+            ).explain(color![255, 0, 0])
         }
 
         fn view_diagram(
-            cells: &mut Vec<(ViewIndex, &'c mut MetaCell<data::Selectable<Data>>)>,
-        ) -> iced::Element<'c, Message>
+            cells: &mut Vec<(ViewIndex, &'c mut Cell<data::Selectable<Data>>)>,
+            outer_widths: &mut Spacer,
+            render: Render,
+        ) -> ((u16, u16), Vec<u16>, iced::Element<'c, Message>)
         {
             if let Some((index, this_cell)) = cells.pop() {
                 let (level, path) = extract![index => level, path in ViewIndex::Leveled { level, path }];
 
+                let input_count = this_cell.face().ends.len();
+
+
                 let mut upstream = vec![];
+                let mut upstream_widths = vec![];
 
-                let mut only_lines = true;
+                let mut line_len = LINE_LEN;
+                let mut free_ends = vec![];
 
-                let input_count = this_cell.face.ends.len();
 
                 // NOTE: Render subdiagrams going up the input lines.
                 //
@@ -1032,73 +1456,108 @@ pub mod viewing {
                 for i in (0 .. input_count).rev() {
                     // Find the cell which runs into the next input...
                     //
-                    let is_connected = cells.last().map(|(_, cell)| cell.face.fill == this_cell.face.ends[i]).unwrap_or(false);
+                    let is_connected =
+                    cells
+                        .last()
+                        .map(|(_, cell)| cell.face().fill == this_cell.face().ends[i])
+                        .unwrap_or(false);
 
                     // ...and connect it.
                     //
                     if is_connected {
-                        let subdiagram = Self::view_diagram(cells);
+                        let ((height, width), widths, subdiagram) = Self::view_diagram(cells, outer_widths, render);
 
                         upstream.push(subdiagram);
-                        only_lines = false;
+                        line_len = line_len.max(height);
+
+                        upstream_widths.extend(widths);
 
                     } else {
-                        upstream.push(Self::view_line(true));
+                        free_ends.push(i);
+
+                        let outer_width = outer_widths[i].width();
+                        upstream_widths.push(LINE_WIDTH.max(outer_width));
                     }
                 }
 
-                let this_cell = this_cell.view(level, path);
+                // NOTE: Insert the free lines. Upstream must be temporarily reordered.
+                //
+                {
+                    upstream.reverse();
 
-                if only_lines {
-                    upstream.pop();
-                    upstream.push(Self::view_line(false));
+                    for i in free_ends.into_iter().rev() {// NOTE: Reverse due to growth of `upstream.len()`.
+                        upstream.insert(i, view_line(line_len));
+                    }
+
+                    upstream.reverse();
                 }
 
+
+                let ((this_height, mut this_width), this_cell) = this_cell.view(level, path, outer_widths, render);
+
+
+                // for (i, space) in line_system.spaces_around(&upstream_widths).into_iter().enumerate().rev() {
+                //     this_width += space;
+
+                //     #[cfg(debug_assertions)] upstream.insert(i, spacer(space, i % 2 == 0));
+                //     #[cfg(not(debug_assertions))] upstream.insert(i, spacer(space));
+                // }
+
                 upstream.reverse();
+                upstream_widths.reverse();
+                //
+                // NOTE: Reverse back
+
+
+                for &width in &upstream_widths {
+                    this_width += width;
+                }
+
+                outer_widths.group(this_width, input_count);
+
+
+                let upstream =
+                iced::Row::with_children(upstream)
+                    .align_items(iced::Align::Center)
+                    .spacing(PADDING)
+                    .padding(0)
+                    .width(this_width.into());
+
 
                 let diagram =
                 iced::Column::new()
                     .push(
-                        iced::Row::with_children(upstream)
-                            .align_items(iced::Align::Center)
-                            .spacing(SPACING)
+                        upstream
                     )
                     .push(
                         this_cell
                     )
-                    .push(Self::view_line(false))
+                    .push(view_line(LINE_LEN))
                     .align_items(iced::Align::Center)
+                    .width(this_width.into())
                     .into();
 
-                diagram
+
+                ((line_len + LINE_LEN + this_height, this_width), upstream_widths, diagram)
 
             } else {
-                Self::view_line(false)
+                ((LINE_LEN, LINE_WIDTH), vec![], view_line(LINE_LEN))
             }
-        }
-
-        // FIXME: Do a workaround for flex grow.
-        //
-        fn view_line(flex: bool) -> iced::Element<'static, Message> {
-            let height =
-            if flex {
-                iced::Length::Fill
-
-            } else {
-                iced::Length::Units(LINE_LEN)
-            };
-
-            iced::Container::new(
-                iced::Space::new(iced::Length::Units(4), height)
-            )
-            .style(crate::styles::container::LINE)
-            .into()
         }
     }
 
-    impl<Data> MetaCell<data::Selectable<Data>>
+    impl<Data> Cell<data::Selectable<Data>>
     where Data: behavior::SimpleView + std::fmt::Debug {
-        fn view(&mut self, level: usize, path: Vec<TimelessIndex>) -> iced::Element<Message> {
+        fn view(
+            &mut self,
+            level: usize,
+            path: Vec<TimelessIndex>,
+            outer_widths: &mut Spacer,
+            render: Render,
+        ) -> ((u16, u16), iced::Element<Message>) {
+
+            let mut content_height = 0;
+            let mut content_width = 0;
 
             let content =
             if let Some(content) = &mut self.content {
@@ -1116,13 +1575,34 @@ pub mod viewing {
                     })
                     .collect();
 
-                Some(Diagram::view_diagram(&mut inner_cells))
+
+                let mut inner_widths = outer_widths.phantom();
+                let ((height, width), widths, diag) = Diagram::view_diagram(&mut inner_cells, &mut inner_widths, render);
+
+                outer_widths.absorb(&inner_widths);
+
+                content_height = height;
+                content_width = width + 2 * PADDING;
+
+                let diag = pad(diag);
+
+                #[cfg(debug_assertions)] {
+                    Some(diag.explain(color![255, 0, 0]))
+                }
+
+                #[cfg(not(debug_assertions))] {
+                    Some(diag)
+                }
 
             } else {
                 None
             };
 
-            self.data.view_cell(ViewIndex::Leveled { level, path }, content)
+            let ((data_height, data_width), data) = self.meta.data.view_cell(ViewIndex::Leveled { level, path }, content_width, content, render);
+
+            let width = content_width.max(data_width);
+
+            ((content_height + data_height, width), data)
         }
     }
 }

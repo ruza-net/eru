@@ -21,10 +21,21 @@ pub mod color {
 
 
 pub const PADDING: u16 = 8;
+pub const LINE_WIDTH: u16 = 1;
 
 pub const LINE: Style = Style {
     kind: Kind::Line,
     color: iced::Color::BLACK,
+};
+
+pub const DEBUG_1: Style = Style {
+    kind: Kind::Line,
+    color: color![255, 0, 0],
+};
+
+pub const DEBUG_2: Style = Style {
+    kind: Kind::Line,
+    color: color![0, 255, 0],
 };
 
 pub const CELL: Style = Style {
@@ -39,6 +50,9 @@ pub const SELECTED_CELL: Style = Style {
 
 
 pub struct Tooltip;
+
+pub struct Error;
+pub struct PopUp;
 
 
 pub struct Style {
@@ -118,6 +132,26 @@ impl container::StyleSheet for Tooltip {
             border_radius: cell::RADIUS,
 
             background: Some(color![204, 235, 238, 0.7].into()),
+
+            ..fill![]
+        }
+    }
+}
+
+impl container::StyleSheet for PopUp {
+    fn style(&self) -> container::Style {
+        container::Style {
+            background: Some(color![0, 121, 199].into()),
+
+            ..fill![]
+        }
+    }
+}
+
+impl container::StyleSheet for Error {
+    fn style(&self) -> container::Style {
+        container::Style {
+            background: Some(color![248, 73, 88].into()),
 
             ..fill![]
         }

@@ -1,7 +1,7 @@
 use iced::{ button, tooltip };
 
 use crate::behavior::SimpleView;
-use crate::model::Icon;
+use crate::model::{ Icon, Render };
 
 use std::path::PathBuf;
 
@@ -70,7 +70,7 @@ impl<Msg> Tooltip<Msg> {
 }
 
 impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
-    pub fn view(&mut self, size: Option<u16>) -> iced::Element<Msg> {
+    pub fn view(&mut self, size: Option<u16>, render: Render) -> iced::Element<Msg> {
         let mut btn = iced::Button::new(
                 &mut self.state,
 
@@ -85,14 +85,19 @@ impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
                 .width(iced::Length::Units(size));
         }
 
-        if let Some(on_press) = &self.on_press {
-            btn = btn.on_press(on_press.clone());
-        }
+        if render == Render::Interactive {
+            if let Some(on_press) = &self.on_press {
+                btn = btn.on_press(on_press.clone());
+            }
 
-        if let Some(label) = &self.icon.label {
-            tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
-            .style(crate::styles::container::Tooltip)
-            .into()
+            if let Some(label) = &self.icon.label {
+                tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
+                .style(crate::styles::container::Tooltip)
+                .into()
+
+            } else {
+                btn.into()
+            }
 
         } else {
             btn.into()

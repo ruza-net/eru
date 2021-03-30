@@ -9,12 +9,13 @@ use super::viewing::{ Message, ViewIndex };
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Selectable<Data> {
     val: Data,
 
     selected: bool,
 
+    #[serde(skip)]
     select: button::State,
 }
 
