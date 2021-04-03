@@ -106,7 +106,7 @@ impl<'s, Msg: 'static + Clone + Default> Form<'s, Msg> {
 }
 
 
-
+#[allow(dead_code)]
 impl<'s, Msg> PopUp<'s, Msg> {
     pub fn new(main_content: impl Into<iced::Element<'s, Msg>>, pop_up: Form<'s, Msg>) -> Self {
         Self {

@@ -7,8 +7,6 @@ pub mod data;
 mod tower;
 pub use tower::Tower;
 
-mod line;
-
 
 mod spacer;
 pub use spacer::Spacer;
@@ -33,8 +31,6 @@ pub enum Error {
 
     CannotGroupDisconnected(Vec<ViewIndex>),
     CellsDoNotFormTree(Vec<ViewIndex>),
-
-    CannotConvertAlreadyGrouped,
 }
 
 #[must_use = "this `EditResult` might be an `Err` variant which should be handled"]
@@ -163,6 +159,7 @@ impl<Data> Tail<data::Selectable<Data>> {
 }
 
 
+#[allow(dead_code)]
 impl<O, Data> EditResult<O, Data> {
     #[track_caller]
     pub fn unwrap(self) -> O {
@@ -342,6 +339,7 @@ impl<Data> Cell<Data> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn to_data(self) -> Data {
         match self {
             Self::Ground(data) => data,
@@ -349,6 +347,7 @@ impl<Data> Cell<Data> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn face(&self) -> Option<&Face> {
         match self {
             Self::Ground(_) => None,
@@ -450,30 +449,6 @@ pub mod viewing {
             match self {
                 Self::Ground(_) => vec![],
                 Self::Leveled { path, .. } => path.clone(),
-            }
-        }
-    }
-
-    // IMPL: Iteration
-    //
-    impl Selection {
-        pub fn cells(&self) -> Vec<ViewIndex> {
-            match self {
-                Selection::Ground(index) =>
-                    vec![ViewIndex::Ground(*index)],
-
-                Selection::Leveled { level, path, cells } =>
-                    cells
-                        .iter()
-                        .copied()
-                        .map(|cell| {
-                            let mut path = path.clone();
-                            path.push(cell);
-
-                            path
-                        })
-                        .map(|path| ViewIndex::Leveled { level: *level, path })
-                        .collect()
             }
         }
     }

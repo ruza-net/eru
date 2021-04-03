@@ -28,11 +28,6 @@ impl<Msg> CloseButton<Msg> {
         self.on_press = Some(on_press);
         self
     }
-
-    pub fn is_arrow(mut self, is_arrow: bool) -> Self {
-        self.is_arrow = is_arrow;
-        self
-    }
 }
 
 impl<Msg: 'static + Clone + Default> CloseButton<Msg> {

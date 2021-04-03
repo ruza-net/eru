@@ -119,6 +119,7 @@ impl<Data> Diagram<Data> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn iter_mut_groups(&mut self) -> IterMutGroups<Data> {
         IterMutGroups {
             level: self.level(),
@@ -668,6 +669,7 @@ impl<Data> Diagram<Data> {
     }
 
 
+    #[allow(dead_code)]
     fn input_count(&self) -> usize {
         let outputs =
         self.cells
@@ -997,6 +999,7 @@ impl<Data> Cell<Data> {
 }
 
 impl<Data> MetaCell<Data> {
+    #[allow(dead_code)]
     pub const fn face(&self) -> &Face {
         &self.face
     }
@@ -1136,6 +1139,7 @@ impl Face {
 }
 
 
+#[allow(dead_code)]
 pub mod viewing {
     use crate::components::opetope::{
         Spacer,

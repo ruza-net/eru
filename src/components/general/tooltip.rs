@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use iced::{ button, tooltip };
 
 use crate::behavior::SimpleView;
@@ -5,10 +7,6 @@ use crate::model::{ Icon, Render };
 
 use std::path::PathBuf;
 
-
-
-// const PADDING: f32 = 8.0;
-// const ICON_SIZE: Size = Size::new(32., 32.);
 
 
 pub struct Tooltip<Msg> {

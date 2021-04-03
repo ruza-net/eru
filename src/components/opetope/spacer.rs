@@ -33,6 +33,7 @@ impl From<u16> for Spacer {
 /// Instance creation
 ///
 impl Spacer {
+    #[allow(dead_code)]
     pub fn new(min_width: u16, count: usize) -> Self {
         Self {
             inner: vec![ Self { min_width, ..fill![] }; count ],
@@ -48,13 +49,6 @@ impl Spacer {
             min_width: self.width(),
         }
     }
-
-    // #[track_caller]
-    // pub fn unwrap_single(mut self) -> Self {
-    //     assert![!self.inner.is_empty(), "cannot unwrap a singleton from an empty group"];
-
-    //     self.inner.remove(self.inner.len() - 1 - self.skipped)
-    // }
 
     pub fn group(min_width: u16, inner: Vec<Self>) -> Self {
         Self { min_width, inner }
@@ -76,78 +70,17 @@ impl Spacer {
     pub fn space_count(&self) -> usize {
         self.inner.len().saturating_sub(1)
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Self> {
-        self.inner
-            .iter()
-            .rev()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self> {
-        self.inner
-            .iter_mut()
-            .rev()
-    }
-
-    pub fn into_inner(self) -> Vec<Self> {
-        self.inner
-    }
 }
-
-/*
-/// Skipping
-///
-impl Spacer {
-    #[track_caller]
-    pub fn skip(&mut self) {
-        assert![self.skipped < self.inner.len(), "skipped too much elements"];
-
-        self.skipped += 1;
-    }
-
-    pub fn unskip(&mut self, amount: usize) {
-        self.skipped = self.skipped.saturating_sub(amount);
-    }
-
-    pub fn unskip_all(&mut self) {
-        self.skipped = 0;
-    }
-}
-*/
 
 /// Mutation
 ///
 impl Spacer {
-    // #[track_caller]
-    // pub fn group(&mut self, min_width: u16, count: usize) {
-    //     let len = self.inner.len();
-    //     let end = self.skipped + count;
-
-    //     assert![end <= len, "skipped + count (is {}) must be <= len (is {})", end, len];
-
-    //     let inner = self[self.skipped .. end].to_vec();
-
-    //     let replace = len - end .. len - self.skipped;
-
-    //     self.inner
-    //         .splice(replace, vec![Self { min_width, inner, ..fill![] }])
-    //         .collect_vec();
-    // }
-
     pub fn grow(&mut self, lower_bound: u16) {
         self.min_width = self.min_width.max(lower_bound);
     }
 
     pub fn pad(&mut self, padding: u16) {
         self.min_width += 2 * padding;// TODO: What if `self.width() > self.min_width`?
-    }
-
-    #[track_caller]
-    pub fn conserve(&mut self, index: usize, width: u16) {
-        self.inner[index].grow(width);
-        // self[index].barrier = true;
-
-        // self.skip();
     }
 
     pub fn extend(&mut self, mut outer: Vec<Self>) -> Vec<Self> {

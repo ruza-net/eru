@@ -109,7 +109,7 @@ impl App {
         if data.iter().any(|(_, name, wrap)| name.is_empty() || wrap.is_empty()) {
             self.error(Error::EmptyName)
 
-        } else if let Some(sel) = self.opetope.selected_cells() {
+        } else if self.opetope.selected_cells().is_some() {
             for (cell, name, wrap) in data {
                 match
                 self.opetope
@@ -514,9 +514,6 @@ impl fmt::Display for opetope::Error {
 
             opetope::Error::CellsDoNotFormTree(_sel) =>
                 write![fmt, "Cells do not form a tree"],
-
-            opetope::Error::CannotConvertAlreadyGrouped =>
-                write![fmt, "Cannot pass to next level when the layer already has groups"],
 
 
             // Internal
