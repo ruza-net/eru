@@ -15,3 +15,20 @@
 		- keeping index histories
 		- implementing a `TracingTree`
 		- making indices reactive
+
+[03/04/2021] Conclusion
+    - indexing consistency is achieved by not retaining the indices in app state
+        - indices will be adjusted after each operation, so they never become invalid
+    
+    - grouping is implemented by nesting `TracingVec`s into `Cell`s
+        - this isn't as elegant as a `TracingTree`, but is simple enough
+        - must change in the future in favor of `TracingTree`, since this isn't scalable
+    
+    - there were problems with horizontal spacing; resolved by group-based `Spacer`
+        - it mimics the tree structure but only retains the widths
+        - it's handed the upstream subdiagrams and renders them inside containers of its respective width
+        - this ensures the upstream subdiagrams are spaced accordingly
+    
+    - there's no backlog, so no undo
+        - this would require an incremental representation, so a whole rewrite
+        - this is desirable in a future implementation
