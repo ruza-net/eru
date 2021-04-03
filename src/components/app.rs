@@ -544,7 +544,7 @@ impl fmt::Display for Error {
         match self {
             Self::Opetope(e) => write![fmt, "{}", e],
             
-            Self::EmptyName => write![fmt, "cell name cannot be empty"],
+            Self::EmptyName => write![fmt, "Cell name cannot be empty"],
         }
     }
 }
