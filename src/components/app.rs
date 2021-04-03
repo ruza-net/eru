@@ -137,13 +137,18 @@ impl App {
     }
 
     fn rename(&mut self, new_names: Vec<String>) {
-        let sel = self.opetope.selected_cells().unwrap();
+        if new_names.iter().any(String::is_empty) {
+            self.error(Error::EmptyName);
 
-        for (cell, new_name) in sel.as_cells().iter().zip(new_names) {
-            match self.opetope.rename(cell, new_name.into()) {
-                Ok(_) => {},
+        } else {
+            let sel = self.opetope.selected_cells().unwrap();
 
-                Err(e) => self.error(e.into()),
+            for (cell, new_name) in sel.as_cells().iter().zip(new_names) {
+                match self.opetope.rename(cell, new_name.into()) {
+                    Ok(_) => {},
+
+                    Err(e) => self.error(e.into()),
+                }
             }
         }
     }

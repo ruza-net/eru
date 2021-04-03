@@ -208,7 +208,6 @@ impl Layout {
                 PopUp::new(
                     main,
                     Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
-                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut name.state,
@@ -224,15 +223,13 @@ impl Layout {
                                 &wrap.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
                             ).padding(PADDING)
-                        )
-                        .push(iced::Space::with_width(iced::Length::Fill)),
+                        ),
                 ).view(pop_up),
 
             State::ProvideSprout { pop_up, last_end, last_wrap, wraps, ends } =>
                 PopUp::new(
                     main,
                     Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
-                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut last_end.state,
@@ -248,15 +245,13 @@ impl Layout {
                                 &last_wrap.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
                             ).padding(PADDING)
-                        )
-                        .push(iced::Space::with_width(iced::Length::Fill)),
+                        ),
                 ).view(pop_up),
 
             State::ProvideSplit { pop_up, name, wrap_top, wrap_bot } =>
                 PopUp::new(
                     main,
                     Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
-                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut name.state,
@@ -280,15 +275,13 @@ impl Layout {
                                 &wrap_bot.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedSecondWrap(s)),
                             ).padding(PADDING)
-                        )
-                        .push(iced::Space::with_width(iced::Length::Fill)),
+                        ),
                 ).view(pop_up),
 
             State::ProvidePass { pop_up, groups_left, last, .. } =>
                 PopUp::new(
                     main,
                     Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
-                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut last.state,
@@ -296,8 +289,7 @@ impl Layout {
                                 &last.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
                             ).padding(PADDING)
-                        )
-                        .push(iced::Space::with_width(iced::Length::Fill)),
+                        ),
                 ).view(pop_up),
         }
     }

@@ -72,6 +72,8 @@ macro_rules! view_form {
             let mut children = self.children;
             let mut is_error = true;
 
+            children.insert(0, iced::Space::with_width(iced::Length::Fill).into());
+            children.push(iced::Space::with_width(iced::Length::Fill).into());
 
             if let Data::Dialog { on_close, on_confirm } = self.data {
                 is_error = false;
