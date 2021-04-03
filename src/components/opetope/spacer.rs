@@ -1,103 +1,238 @@
 use std::ops;
+use itertools::Itertools;
 
-use crate::components::opetope::viewing::Message;
-
-use super::diagram::viewing::{
-    view_line,
-
-    LINE_LEN,
-};
+use crate::styles::container::{ PADDING, LINE_WIDTH };
 
 
-pub enum Space<'e> {
-    Group { min_width: u16, inner: Vec<Self> },
 
-    End { min_width: u16, element: iced::Element<'e, Message> },
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Spacer {
+    min_width: u16,
+
+    inner: Vec<Self>,
+}
+impl Default for Spacer {
+    fn default() -> Self {
+        Self {
+            inner: vec![],
+            min_width: LINE_WIDTH,
+        }
+    }
+}
+impl From<u16> for Spacer {
+    fn from(min_width: u16) -> Self {
+        Self {
+            min_width,
+
+            ..fill![]
+        }
+    }
 }
 
-pub struct Spacer<'e> {
-    spaces: Vec<Space<'e>>,
+
+/// Instance creation
+///
+impl Spacer {
+    pub fn new(min_width: u16, count: usize) -> Self {
+        Self {
+            inner: vec![ Self { min_width, ..fill![] }; count ],
+
+            ..fill![]
+        }
+    }
+
+    pub fn flatten(&self) -> Self {
+        Self {
+            inner: vec![],
+
+            min_width: self.width(),
+        }
+    }
+
+    // #[track_caller]
+    // pub fn unwrap_single(mut self) -> Self {
+    //     assert![!self.inner.is_empty(), "cannot unwrap a singleton from an empty group"];
+
+    //     self.inner.remove(self.inner.len() - 1 - self.skipped)
+    // }
+
+    pub fn group(min_width: u16, inner: Vec<Self>) -> Self {
+        Self { min_width, inner }
+    }
 }
 
-
-impl Space<'_> {
+/// Accessing
+///
+impl Spacer {
     pub fn width(&self) -> u16 {
-        match self {
-            Self::End { min_width, .. } =>
-                *min_width,
-
-            Self::Group { min_width, inner } =>
-                inner
-                    .iter()
-                    .map(Self::width)
-                    .sum::<u16>()
-                    .max(*min_width),
-        }
+        self.inner
+            .iter()
+            .map(Self::width)
+            .interleave_shortest(vec![PADDING; self.space_count()])
+            .sum::<u16>()
+            .max(self.min_width)
     }
 
-    pub fn width_mut(&mut self) -> &mut u16 {
-        match self {
-            Self::End { min_width, .. } |  Self::Group { min_width, .. } =>
-                min_width,
+    pub fn space_count(&self) -> usize {
+        self.inner.len().saturating_sub(1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Self> {
+        self.inner
+            .iter()
+            .rev()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self> {
+        self.inner
+            .iter_mut()
+            .rev()
+    }
+
+    pub fn into_inner(self) -> Vec<Self> {
+        self.inner
+    }
+}
+
+/*
+/// Skipping
+///
+impl Spacer {
+    #[track_caller]
+    pub fn skip(&mut self) {
+        assert![self.skipped < self.inner.len(), "skipped too much elements"];
+
+        self.skipped += 1;
+    }
+
+    pub fn unskip(&mut self, amount: usize) {
+        self.skipped = self.skipped.saturating_sub(amount);
+    }
+
+    pub fn unskip_all(&mut self) {
+        self.skipped = 0;
+    }
+}
+*/
+
+/// Mutation
+///
+impl Spacer {
+    // #[track_caller]
+    // pub fn group(&mut self, min_width: u16, count: usize) {
+    //     let len = self.inner.len();
+    //     let end = self.skipped + count;
+
+    //     assert![end <= len, "skipped + count (is {}) must be <= len (is {})", end, len];
+
+    //     let inner = self[self.skipped .. end].to_vec();
+
+    //     let replace = len - end .. len - self.skipped;
+
+    //     self.inner
+    //         .splice(replace, vec![Self { min_width, inner, ..fill![] }])
+    //         .collect_vec();
+    // }
+
+    pub fn grow(&mut self, lower_bound: u16) {
+        self.min_width = self.min_width.max(lower_bound);
+    }
+
+    pub fn pad(&mut self, padding: u16) {
+        self.min_width += 2 * padding;// TODO: What if `self.width() > self.min_width`?
+    }
+
+    #[track_caller]
+    pub fn conserve(&mut self, index: usize, width: u16) {
+        self.inner[index].grow(width);
+        // self[index].barrier = true;
+
+        // self.skip();
+    }
+
+    pub fn extend(&mut self, mut outer: Vec<Self>) -> Vec<Self> {
+        for space in &mut self.inner {
+            if space.inner.is_empty() {
+                if let Some(out) = outer.pop() {
+                    *space = out;
+
+                } else {
+                    break;
+                }
+
+            } else {
+                outer = space.extend(outer);
+            }
+        }
+
+        outer
+    }
+}
+
+/// Rendering
+///
+impl Spacer {
+    pub fn render<'e, Msg: 'e>(&self, items: &mut Vec<iced::Element<'e, Msg>>) -> iced::Element<'e, Msg> {
+        if self.inner.is_empty() {
+            let element = items.pop().unwrap();
+
+            iced::Container::new(element)
+                .align_x(iced::Align::Center)
+                .width(self.width().into())
+                .into()
+
+        } else {
+            let mut children = vec![];
+
+            for space in self.inner.iter().rev() {
+                children.push(space.render(items));
+
+                if items.is_empty() {
+                    break;
+                }
+            }
+
+            iced::Container::new(
+            iced::Row::with_children(children)
+                .align_items(iced::Align::Center)
+                .spacing(PADDING)
+                )
+                .align_x(iced::Align::Center)
+                .width(self.width().into())
+                .into()
         }
     }
 }
 
-impl Spacer<'_> {
-    pub fn group(&mut self, min_width: u16, count: usize) {
-        let inner = self.spaces.split_off(self.spaces.len() - count);
 
-        self.spaces.insert(0, Space::Group { min_width, inner });
-    }
+macro_rules! index {
+    ( $self:ident [ $idx:ident : $typ:ty => $out:ty ] => $precond:block => $body:expr ) => {
+        impl ops::Index<$typ> for Spacer {
+            type Output = $out;
 
-    pub fn phantom<'a>(&self) -> Spacer<'a> {
-        let mut spaces = vec![];
+            fn index(&$self, mut $idx: $typ) -> &Self::Output {
+                $precond
 
-        for space in &self.spaces {
-            spaces.push(Space::End {
-                min_width: space.width(),
-                element: view_line(LINE_LEN),
-            });
+                & $body
+            }
         }
 
-        Spacer {
-            spaces,
-        }
-    }
+        impl ops::IndexMut<$typ> for Spacer {
+            fn index_mut(&mut $self, mut $idx: $typ) -> &mut Self::Output {
+                $precond
 
-    pub fn new<'a>(count: usize) -> Spacer<'a> {
-        let mut spaces = vec![];
-
-        for _ in 0 .. count {
-            spaces.push(Space::End {
-                min_width: 0,
-                element: view_line(LINE_LEN),
-            })
+                &mut $body
+            }
         }
-
-        Spacer {
-            spaces,
-        }
-    }
-
-    pub fn absorb(&mut self, other: &Self) {
-        for (this, other) in self.spaces.iter_mut().zip(&other.spaces) {
-            *this.width_mut() = this.width().max(other.width());
-        }
-    }
+    };
 }
 
-impl<'e> ops::Index<usize> for Spacer<'e> {
-    type Output = Space<'e>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.spaces[ self.spaces.len() - 1 - index ]
-    }
-}
-impl ops::IndexMut<usize> for Spacer<'_> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        let len = self.spaces.len();
-
-        &mut self.spaces[len - 1 - index]
-    }
+index! { self[index: usize => Self] => { index = self.inner.len() - 1 - index; } => self.inner[index] }
+index! {
+    self[span: ops::Range<usize> => [Self]] =>
+    {
+        let len = self.inner.len();
+        span = len - span.end  .. len - span.start;
+    } =>
+    self.inner[span]
 }

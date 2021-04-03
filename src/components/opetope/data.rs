@@ -52,9 +52,7 @@ impl<Data: SimpleView> Selectable<Data> {
         render: Render,
     ) -> ((u16, u16), iced::Element<'s, Message>) {
 
-        let (width, data) = self.view_data();
-
-        let width = width.max(content_width);
+        let (width, data) = self.view_data(content_width);
 
         let contents =
             if let Some(contents) = contents {
@@ -62,7 +60,6 @@ impl<Data: SimpleView> Selectable<Data> {
                     .push(contents)
                     .push(data)
                     .align_items(iced::Align::Center)
-                    .width(width.into())
                     .into()
 
             } else {
@@ -79,7 +76,6 @@ impl<Data: SimpleView> Selectable<Data> {
         let mut cell =
         iced::Button::new(self.state(), contents)
             .style(style)
-            .width(width.into())
             .padding(0);
 
         if render == Render::Interactive {
@@ -89,10 +85,10 @@ impl<Data: SimpleView> Selectable<Data> {
         ((HEIGHT + 2 * SPACING, width), cell.into())
     }
 
-    pub fn view_data(&self) -> (u16, iced::Element<'static, Message>) {
+    pub fn view_data(&self, min_width: u16) -> (u16, iced::Element<'static, Message>) {
         let val = self.val.view().1;
 
-        let width = self.width();
+        let width = self.width().max(min_width);
 
         (
             width,

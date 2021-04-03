@@ -9,8 +9,9 @@ pub use tower::Tower;
 
 mod line;
 
+
 mod spacer;
-use spacer::Spacer;
+pub use spacer::Spacer;
 
 pub mod diagram;
 pub use diagram::{ Diagram, Face, MetaCell };

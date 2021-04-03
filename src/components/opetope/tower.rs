@@ -285,10 +285,12 @@ impl<Data> Tower<data::Selectable<Data>> {
 }
 
 
+pub mod tower {
+    use crate::components::opetope::{
+        tower::*,
 
-pub mod viewing {
-    use super::*;
-    use super::super::viewing::Message;
+        viewing::Message,
+    };
 
     use crate::model::Render;
     use crate::behavior::SimpleView;
@@ -314,7 +316,7 @@ pub mod viewing {
                 let ((_, new_width), new_downmost_cell) =
                 data.view_cell(
                     idx,
-                    width,
+                    width + 2 * PADDING,
                     Some(
                         iced::Container::new(downmost_cell)
                         .padding(PADDING)
@@ -323,7 +325,7 @@ pub mod viewing {
                     render
                 );
 
-                width = new_width;
+                width = new_width + 2 * PADDING;
                 downmost_cell = new_downmost_cell;
             }
 

@@ -21,22 +21,26 @@ pub mod color {
 
 
 pub const PADDING: u16 = 8;
-pub const LINE_WIDTH: u16 = 1;
+pub const LINE_WIDTH: u16 = 2;
 
 pub const LINE: Style = Style {
     kind: Kind::Line,
     color: iced::Color::BLACK,
 };
 
+
+#[cfg(debug_assertions)]
 pub const DEBUG_1: Style = Style {
     kind: Kind::Line,
     color: color![255, 0, 0],
 };
 
+#[cfg(debug_assertions)]
 pub const DEBUG_2: Style = Style {
     kind: Kind::Line,
     color: color![0, 255, 0],
 };
+
 
 pub const CELL: Style = Style {
     kind: Kind::Cell { selected: false },
@@ -49,10 +53,10 @@ pub const SELECTED_CELL: Style = Style {
 };
 
 
-pub struct Tooltip;
+pub struct Tooltip;// TODO: Move to respective component
 
-pub struct Error;
-pub struct PopUp;
+pub struct Error;// TODO: Move to respective component
+pub struct PopUp;// TODO: Move to respective component
 
 
 pub struct Style {
@@ -152,6 +156,7 @@ impl container::StyleSheet for Error {
     fn style(&self) -> container::Style {
         container::Style {
             background: Some(color![248, 73, 88].into()),
+            text_color: Some(color![244, 244, 244].into()),
 
             ..fill![]
         }

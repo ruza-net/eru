@@ -967,6 +967,10 @@ impl<Data> Cell<Data> {
         &mut self.meta.face
     }
 
+    fn input_count(&self) -> usize {
+        self.face().ends.len()
+    }
+
 
     const fn data(&self) -> &Data {
         &self.meta.data
@@ -1132,14 +1136,12 @@ impl Face {
 }
 
 
-
 pub mod viewing {
-    use super::*;
-    use std::ops;
-
     use crate::components::opetope::{
         Spacer,
         viewing::Message,
+
+        diagram::*,
     };
 
     use crate::behavior;
@@ -1150,6 +1152,8 @@ pub mod viewing {
         LINE_WIDTH,
         cell::{ SPACING },
     };
+
+    pub const LINE_LEN: u16 = 3 * SPACING / 2;
 
 
 
@@ -1187,247 +1191,226 @@ pub mod viewing {
     }
 
 
-    const DEFAULT_WIDTH: u16 = 0;
+    #[derive(Debug)]
+    struct CellCoordinator<'op, Data> {
+        cell: &'op mut MetaCell<Data>,
+        addr: ViewIndex,
 
-    #[derive(Debug, Clone)]
-    struct LineMargin {
-        upstream: Vec<Self>,
-
-        min_left: u16,
-        min_right: u16,
-
-        delta: u16,
+        inner: Option<Box<Self>>,
+        upstream: Vec<Option<Self>>,
     }
-    impl Default for LineMargin {
-        fn default() -> Self {
+
+    /// Instance creation
+    ///
+    impl<'op, Data> CellCoordinator<'op, Data> {
+        pub fn new(level: usize, cell_space: &'op mut TracingVec<Cell<Data>>) -> CellCoordinator<'op, Data> {
+            Self::collect_from(level, vec![], &mut cell_space.iter_mut_timeless_indices().collect())
+        }
+
+        fn collect_from(
+            level: usize,
+            mut path: Vec<TimelessIndex>,
+            cell_space: &mut Vec<(TimelessIndex, &'op mut Cell<Data>)>,
+        ) -> CellCoordinator<'op, Data>
+        {
+            let (addr, cell) = cell_space.pop().unwrap();
+            let input_count = cell.input_count();
+
+            let mut upstream = vec![];
+
+            for i in (0 .. input_count).rev() {
+                let is_connected =
+                    cell_space
+                        .last()
+                        .map(|(_, next)| next.face().fill == cell.face().ends[i])
+                        .unwrap_or(false);
+
+                if is_connected {
+                    upstream.push(Some(Self::collect_from(level, path.clone(), cell_space)));
+
+                } else {
+                    upstream.push(None);
+                }
+            }
+
+            path.push(addr);
+
+            let inner =
+            cell.content
+                .as_mut()
+                .map(|inner_space|
+                    Box::new(Self::collect_from(level, path.clone(), &mut inner_space.iter_mut_timeless_indices().collect()))
+                );
+
+
+            let cell = &mut cell.meta;
+            let addr = ViewIndex::Leveled { level, path };
+
             Self {
-                min_left: DEFAULT_WIDTH / 2,
-                min_right: DEFAULT_WIDTH / 2,
+                cell,
+                addr,
 
-                upstream: vec![],
-
-                delta: 0,
-            }
-        }
-    }
-    impl ops::AddAssign<u16> for LineMargin {
-        fn add_assign(&mut self, rhs: u16) {
-            self.delta += rhs.saturating_sub(self.min_left + self.min_right + self.delta);
-        }
-    }
-    impl LineMargin {
-        fn margin(&self) -> u16 {
-            self.delta / 2 +
-            self.up_margins().max
-            (self.min_left + self.min_right)
-        }
-
-        fn left_delta(&self) -> u16 {
-            self.delta / 2
-        }
-
-        fn right_delta(&self) -> u16 {
-            self.delta - self.left_delta()
-        }
-
-        fn left_margin(&self) -> u16 {
-            self.left_delta() +
-            self.up_margins().max
-            (self.min_left)
-        }
-
-        fn right_margin(&self) -> u16 {
-            self.right_delta() +
-            self.up_margins().max
-            (self.min_right)
-        }
-
-        fn up_margins(&self) -> u16 {
-            // NOTE: Correct because `margin` is `width / 2`.
-            //
-            self.upstream.iter().map(LineMargin::margin).sum()
-        }
-
-        fn flatten(self) -> Vec<Self> {
-            let left_delta = self.left_delta();
-            let right_delta = self.right_delta();
-
-            let Self { mut upstream, mut min_left, mut min_right, .. } = self;
-
-            min_left += left_delta;
-            min_right += right_delta;
-
-            upstream = upstream.into_iter().map(Self::flatten).flatten().collect();
-
-            if upstream.is_empty() {
-                vec![Self { upstream, min_left, min_right, delta: 0 }]
-
-            } else {
-                let up_width = upstream.iter().map(Self::margin).sum::<u16>();
-
-                upstream[0].min_left += min_left.saturating_sub(up_width / 2);
-                upstream.last_mut().unwrap().min_right += min_right.saturating_sub(up_width - up_width / 2);
-
-                upstream
+                inner,
+                upstream,
             }
         }
     }
 
-    #[derive(Debug, Default, Clone)]
-    struct LineSystem {
-        lines: Vec<LineMargin>,
-    }
-    macro_rules! impl_index {
-        ( $($typ:ty => $($idx:ty)*),* ) => {
-            $(
-                $(
-                    impl ops::Index<$idx> for LineSystem {
-                        type Output = $typ;
-
-                        fn index(&self, index: $idx) -> &Self::Output {
-                            &self.lines[index]
-                        }
-                    }
-
-                    impl ops::IndexMut<$idx> for LineSystem {
-                        fn index_mut(&mut self, index: $idx) -> &mut Self::Output {
-                            &mut self.lines[index]
-                        }
-                    }
-                )*
-            )*
-        };
-    }
-    impl_index! {
-        LineMargin => usize,
-        [LineMargin] => ops::Range<usize> ops::RangeFrom<usize> ops::RangeFull ops::RangeInclusive<usize> ops::RangeTo<usize> ops::RangeToInclusive<usize>
-    }
-    impl LineSystem {
-        fn new(count: usize) -> Self {
-            Self {
-                lines: vec![fill![]; count],
-            }
-        }
-
-        fn group(&mut self, count: usize) {
-            let upstream = self.lines.split_off(self.lines.len() - count);
-
-            self.lines.push(LineMargin { upstream, ..fill![] });
-        }
-
-        fn compute_deltas(&mut self, downstream: &Self) {
-            self.lines
-                .iter_mut()
-                .zip(
-                    downstream
-                        .lines
-                        .iter()
-                )
-                .map(|(this, down)| this.delta = down.margin().saturating_sub(this.margin()))
-                .collect()
-        }
-
-        fn flatten(self) -> Self {
-            let lines =
-            self.lines
-                .into_iter()
-                .map(LineMargin::flatten)
-                .flatten()
-                .collect();
-
-            Self { lines }
-        }
-
-        fn spaces_between(&self) -> Vec<u16> {
-            let mut spaces = vec![];
-
-            for bounds in self.lines.windows(2) {
-                let space = PADDING.max(bounds[0].up_margins() + bounds[1].up_margins());
-
-                spaces.push(space);
-            }
-
-            spaces
-        }
-
-        fn deltas(&self) -> Vec<u16> {
-            let mut spaces = vec![];
-
-            for bounds in self.lines.windows(2) {
-                let space = bounds[0].delta + bounds[1].delta;
-                
-                spaces.push(space);
-            }
-
-            spaces
-        }
-
-        fn spaces_around(&self, widths: &[u16]) -> Vec<u16> {
-            let mut spaces = vec![];
-
-            let count = widths.len();
-            
-            let mut lines =
-            self.lines
+    /// Accessing
+    ///
+    impl<Data> CellCoordinator<'_, Data> {
+        pub fn input_count(&self) -> usize {
+            self.upstream
                 .iter()
-                .zip(widths)
-                .map(|(line, width)| (line.clone(), *width))
+                .fold(0, |acc, up|
+                    if let Some(up) = up {
+                        acc + up.input_count()
+                        
+                    } else {
+                        acc + 1
+                    }
+                )
+        }
+    }
+
+    /// Viewing
+    ///
+    impl<'op, Data: behavior::SimpleView + std::fmt::Debug> CellCoordinator<'op, data::Selectable<Data>> {
+        pub fn view(self, render: Render) -> iced::Element<'op, Message> {
+            let widths = vec![fill![]; self.input_count()];
+
+            let without_line =
+            self.render(widths, render).2;
+
+            iced::Column::new()
+                .push(without_line)
+                .push(view_line(LINE_LEN))
+                .align_items(iced::Align::Center)
+                .into()
+        }
+
+        fn render(self, mut outer_widths: Vec<Spacer>, render: Render) -> (u16, Spacer, iced::Element<'op, Message>) {
+            let mut widths = vec![];
+            let mut heights = vec![];
+
+
+            // Rendering upstream subdiagrams
+            //
+            let upstream =
+            self.upstream
+                .into_iter()
+                .map(|up|
+                    if let Some(up) = up {
+                        let spaces = outer_widths.split_off(outer_widths.len() - up.input_count());
+
+                        let (height, width, up) = up.render(spaces, render);
+
+                        widths.push(width);
+                        heights.push(height);
+
+                        up
+
+                    } else {
+                        widths.push(outer_widths.pop().unwrap());
+                        heights.push(0);
+
+                        view_line(0)
+                    }
+                )
                 .collect_vec();
 
-            lines.insert(0, (fill![], DEFAULT_WIDTH));
-            lines.push((fill![], DEFAULT_WIDTH));
 
-            for (i, win) in lines.windows(2).enumerate() {
-                let in_between = (1 .. count).contains(&i);
-                let resolve = move |margin| {
-                    margin + if in_between { PADDING } else { DEFAULT_WIDTH }
-                };
+            // Inserting output lines to adjust heights
+            //
+            let max_height = heights.iter().max().copied().unwrap_or(0) + LINE_LEN;
 
-                let ((left_line, left_local_margin), (right_line, right_local_margin)) = extract!{ win => left, right in [left, right] };
+            let mut upstream =
+            upstream
+                .into_iter()
+                .zip(heights)
+                .map(|(up, height)|
+                    iced::Column::new()
+                        .push(up)
+                        .push(view_line(max_height - height))
+                        .align_items(iced::Align::Center)
+                        .into()
+                )
+                .collect_vec();
 
-                spaces.push(
-                    resolve(
-                        (
-                            left_line.right_margin() +
-                            right_line.left_margin()
-                        ).saturating_sub(left_local_margin + right_local_margin)
-                    )
-                );
-            }
 
-            spaces
+            // Rendering inner diagram
+            //
+            widths.reverse();
+            let mut flat_widths = widths.iter().map(Spacer::flatten).collect();
+
+            let (inner_height, inner_spacer, inner) =
+            if let Some(inner) = self.inner {
+                let (height, mut width, mut inner) = inner.render(flat_widths, render);
+
+                inner =
+                iced::Column::new()
+                    .push(inner)
+                    .push(view_line(LINE_LEN))
+                    .align_items(iced::Align::Center)
+                    .into();
+
+                width.pad(PADDING);
+
+                (height + LINE_LEN, width, Some(pad(inner)))
+
+            } else {
+                flat_widths.reverse();
+
+                (0, Spacer::group(0, flat_widths), None)
+            };
+
+
+            // Rendering the whole cell
+            //
+            let (data_height, mut spacer, this_cell) = self.cell.view(self.addr.clone(), inner, inner_spacer, render);
+
+            let height = max_height + inner_height + data_height;
+
+
+            // Spacing the upstream subdiagrams
+            //
+            let upstream = spacer.render(&mut upstream);
+
+            spacer.extend(widths);
+
+            let diagram =
+            iced::Column::new()
+                .push(upstream)
+                .push(this_cell)
+                .align_items(iced::Align::Center)
+                .into();
+
+            (height, spacer, diagram)
         }
     }
 
-
-    pub const LINE_LEN: u16 = 3 * SPACING / 2;
 
     impl<'c, Data: 'c> Diagram<data::Selectable<Data>>
     where Data: behavior::SimpleView + std::fmt::Debug {
-
         pub fn view(&mut self, render: Render) -> iced::Element<Message> {
             let level = self.level() - 1;// NOTE: Since `ViewIndex::Leveled` is shifted left.
-            let input_count = self.input_count();
 
             let prev =
             self.prev
                 .view(render);
 
+
             let mut cells =
             self.cells
                 .iter_mut_timeless_indices()
-                .map(|(index, data)| (ViewIndex::Leveled { level, path: vec![index] }, data))
                 .collect_vec();
-
-            let mut line_system = Spacer::new(input_count);
 
             let mut parts = vec![];
 
             while !cells.is_empty() {
-                // let (_, _, this) = Self::view_diagram(dbg![&mut cells], &mut line_system, render);
-                let (_, _, this) = Self::view_diagram(&mut cells, &mut line_system, render);
+                let coordinator = CellCoordinator::collect_from(level, vec![], &mut cells);
 
-                parts.push(this);
+                parts.push(coordinator.view(render));
             }
 
             parts.reverse();
@@ -1442,188 +1425,43 @@ pub mod viewing {
                     .into()
             };
 
-            iced::Element::from(
+            if cfg![debug_assertions] {
+                iced::Element::from(
+                    iced::Row::new()
+                        .spacing(SPACING * 3)
+                        .push(prev)
+                        .push(parts)
+                ).explain(color![255, 0, 0])
+
+            } else {
                 iced::Row::new()
                     .spacing(SPACING * 3)
                     .push(prev)
                     .push(parts)
-            ).explain(color![255, 0, 0])
-        }
-
-        fn view_diagram(
-            cells: &mut Vec<(ViewIndex, &'c mut Cell<data::Selectable<Data>>)>,
-            outer_widths: &mut Spacer,
-            render: Render,
-        ) -> ((u16, u16), Vec<u16>, iced::Element<'c, Message>)
-        {
-            if let Some((index, this_cell)) = cells.pop() {
-                let (level, path) = extract![index => level, path in ViewIndex::Leveled { level, path }];
-
-                let input_count = this_cell.face().ends.len();
-
-
-                let mut upstream = vec![];
-                let mut upstream_widths = vec![];
-
-                let mut line_len = LINE_LEN;
-                let mut free_ends = vec![];
-
-
-                // NOTE: Render subdiagrams going up the input lines.
-                //
-                // NOTE: Reverse as to render in the right order and enable the leftmost cells
-                // to be `before` the rightmost.
-                //
-                for i in (0 .. input_count).rev() {
-                    // Find the cell which runs into the next input...
-                    //
-                    let is_connected =
-                    cells
-                        .last()
-                        .map(|(_, cell)| cell.face().fill == this_cell.face().ends[i])
-                        .unwrap_or(false);
-
-                    // ...and connect it.
-                    //
-                    if is_connected {
-                        let ((height, width), widths, subdiagram) = Self::view_diagram(cells, outer_widths, render);
-
-                        upstream.push(subdiagram);
-                        line_len = line_len.max(height);
-
-                        upstream_widths.extend(widths);
-
-                    } else {
-                        free_ends.push(i);
-
-                        let outer_width = outer_widths[i].width();
-                        upstream_widths.push(LINE_WIDTH.max(outer_width));
-                    }
-                }
-
-                // NOTE: Insert the free lines. Upstream must be temporarily reordered.
-                //
-                {
-                    upstream.reverse();
-
-                    for i in free_ends.into_iter().rev() {// NOTE: Reverse due to growth of `upstream.len()`.
-                        upstream.insert(i, view_line(line_len));
-                    }
-
-                    upstream.reverse();
-                }
-
-
-                let ((this_height, mut this_width), this_cell) = this_cell.view(level, path, outer_widths, render);
-
-
-                // for (i, space) in line_system.spaces_around(&upstream_widths).into_iter().enumerate().rev() {
-                //     this_width += space;
-
-                //     #[cfg(debug_assertions)] upstream.insert(i, spacer(space, i % 2 == 0));
-                //     #[cfg(not(debug_assertions))] upstream.insert(i, spacer(space));
-                // }
-
-                upstream.reverse();
-                upstream_widths.reverse();
-                //
-                // NOTE: Reverse back
-
-
-                for &width in &upstream_widths {
-                    this_width += width;
-                }
-
-                outer_widths.group(this_width, input_count);
-
-
-                let upstream =
-                iced::Row::with_children(upstream)
-                    .align_items(iced::Align::Center)
-                    .spacing(PADDING)
-                    .padding(0)
-                    .width(this_width.into());
-
-
-                let diagram =
-                iced::Column::new()
-                    .push(
-                        upstream
-                    )
-                    .push(
-                        this_cell
-                    )
-                    .push(view_line(LINE_LEN))
-                    .align_items(iced::Align::Center)
-                    .width(this_width.into())
-                    .into();
-
-
-                ((line_len + LINE_LEN + this_height, this_width), upstream_widths, diagram)
-
-            } else {
-                ((LINE_LEN, LINE_WIDTH), vec![], view_line(LINE_LEN))
+                    .into()
             }
         }
     }
 
-    impl<Data> Cell<data::Selectable<Data>>
-    where Data: behavior::SimpleView + std::fmt::Debug {
-        fn view(
-            &mut self,
-            level: usize,
-            path: Vec<TimelessIndex>,
-            outer_widths: &mut Spacer,
+
+    impl<Data> MetaCell<data::Selectable<Data>>
+    where Data: behavior::SimpleView {
+        fn view<'s>(
+            &'s mut self,
+
+            index: ViewIndex,
+            content: Option<iced::Element<'s, Message>>,
+
+            mut spacer: Spacer,
+
             render: Render,
-        ) -> ((u16, u16), iced::Element<Message>) {
+        ) -> (u16, Spacer, iced::Element<'s, Message>) {
 
-            let mut content_height = 0;
-            let mut content_width = 0;
+            let ((data_height, data_width), data) = self.data.view_cell(index, spacer.width(), content, render);
 
-            let content =
-            if let Some(content) = &mut self.content {
-                let mut inner_cells =
-                content
-                    .iter_mut_timeless_indices()
-                    .map(|(index, data)| {
-                        let mut path = path.clone();
-                        path.push(index);
+            spacer.grow(data_width);
 
-                        (
-                            ViewIndex::Leveled { level, path },
-                            data,
-                        )
-                    })
-                    .collect();
-
-
-                let mut inner_widths = outer_widths.phantom();
-                let ((height, width), widths, diag) = Diagram::view_diagram(&mut inner_cells, &mut inner_widths, render);
-
-                outer_widths.absorb(&inner_widths);
-
-                content_height = height;
-                content_width = width + 2 * PADDING;
-
-                let diag = pad(diag);
-
-                #[cfg(debug_assertions)] {
-                    Some(diag.explain(color![255, 0, 0]))
-                }
-
-                #[cfg(not(debug_assertions))] {
-                    Some(diag)
-                }
-
-            } else {
-                None
-            };
-
-            let ((data_height, data_width), data) = self.meta.data.view_cell(ViewIndex::Leveled { level, path }, content_width, content, render);
-
-            let width = content_width.max(data_width);
-
-            ((content_height + data_height, width), data)
+            (data_height, spacer, data)
         }
     }
 }
