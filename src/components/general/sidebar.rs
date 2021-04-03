@@ -16,7 +16,9 @@ pub enum Message {
     Sprout,
 
     Pass,
+
     Save,
+    Load,
 }
 
 impl Default for Message {
@@ -27,39 +29,29 @@ impl Default for Message {
 
 
 
-impl Default for Sidebar {
-    fn default() -> Self {
-        let mut enclose = Tooltip::from_file("res/img/plus");
-        {
-            enclose.label("Enclose".to_string());
-            enclose.on_press(Message::Enclose);
-        }
-
-
-        let mut sprout = Tooltip::from_file("res/img/plus");
-        *sprout.color_mut() = color![230, 188, 65];
-        {
-            sprout.label("Sprout".to_string());
-            sprout.on_press(Message::Sprout);
-        }
-
-
-        let mut pass = Tooltip::from_file("res/img/plus");
-        *pass.color_mut() = color![29, 129, 179];
-        {
-            pass.label("Pass".to_string());
-            pass.on_press(Message::Pass);
-        }
-
-        let mut save = Tooltip::from_file("res/img/tick");
-        {
-            save.label("Save".to_string());
-            save.on_press(Message::Save);
-        }
+macro_rules! tools {
+    ( $($lowercase:ident >> $uppercase:ident),* $(,)? ) => {
+        $(
+            let mut $lowercase = Tooltip::from_file(format!["res/img/{}", stringify![$lowercase]]);
+            $lowercase.on_press(Message::$uppercase);
+        )*
 
         Self {
             width: style::WIDTH,
-            tools: vec![enclose, sprout, pass, save],
+            tools: vec![ $($lowercase),* ],
+        }
+    };
+}
+
+impl Default for Sidebar {
+    fn default() -> Self {
+        tools! {
+            enclose >> Enclose,
+            sprout >> Sprout,
+            pass >> Pass,
+
+            save >> Save,
+            load >> Load,
         }
     }
 }
@@ -73,7 +65,10 @@ impl Sidebar {
             .map(|tool| tool.view(Some(width), render))
             .collect();
 
-        iced::Container::new(iced::Column::with_children(tools))
+        iced::Container::new(
+                iced::Column::with_children(tools)
+                    .spacing(container::PADDING)
+            )
             .width(iced::Length::Units(self.width + 2 * container::PADDING))
             .height(iced::Length::FillPortion(1))
             .style(style::Default)

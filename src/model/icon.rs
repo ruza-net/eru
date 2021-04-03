@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::behavior::SimpleView;
 
 use iced::{
-    image,
+    svg,
     Color,
 };
 
@@ -18,7 +18,7 @@ struct Config {
 }
 
 enum Data {
-    Image(image::Handle),
+    Image(svg::Handle),
     Text(String),
 
     Element(Box<dyn SimpleView>),
@@ -37,7 +37,7 @@ pub struct Icon {
 impl Icon {
     pub fn from_file(res_path: PathBuf) -> Self {
         let mut img_path = res_path.clone();
-        img_path.push("img.png");
+        img_path.push("img.svg");
 
         let mut color_path = res_path;
         color_path.push("config.ron");
@@ -48,15 +48,15 @@ impl Icon {
 
         let Config { mut color, label, text } = ron::from_str(&buf).expect("invalid data in `color.ron`");
 
-        color[0] /= 256.;
-        color[1] /= 256.;
-        color[2] /= 256.;
+        color[0] /= 255.;
+        color[1] /= 255.;
+        color[2] /= 255.;
 
         let data = if let Some(text) = text {
             Data::Text(text)
 
         } else {
-            Data::Image(image::Handle::from_path(img_path))
+            Data::Image(svg::Handle::from_path(img_path))
         };
 
         Self {
@@ -91,7 +91,7 @@ impl Icon {
         use iced::Length;
 
         match &self.data {
-            Data::Image(img) => iced::Image::new(img.clone())
+            Data::Image(img) => iced::svg::Svg::new(img.clone())
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into(),
