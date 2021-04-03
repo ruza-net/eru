@@ -1,13 +1,14 @@
+use crate::styles::container::PADDING;
+
 use crate::components::{
     opetope,
 
-    sidebar::Sidebar,
+    app::{ Error, GlobalMessage, Data },
+    pop_up::{ self, PopUp, Form },
 
-    app::{ GlobalMessage, Data },
-    pop_up::{ self, PopUp },
-
-    general::close_button,
+    general::Sidebar,
 };
+
 
 
 #[derive(Debug, Clone)]
@@ -16,7 +17,8 @@ pub enum Message {
     UpdatedFirstWrap(String),
     UpdatedSecondWrap(String),
 
-    ClosePopUp,
+    ExitPopUp,
+    ConfirmPopUp,
 }
 
 const ERR_DURATION: u64 = 5;
@@ -28,14 +30,29 @@ pub struct NameSlot {
     pub state: iced::text_input::State,
     pub value: String,
 }
+impl From<String> for NameSlot {
+    fn from(value: String) -> Self {
+        Self {
+            value,
+
+            ..fill![]
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum State {
     Default,
 
+    Rename {
+        pop_up: pop_up::State,
+
+        remaining: Vec<NameSlot>,
+        renamed: Vec<String>,
+    },
+
     ProvideExtrude {
         pop_up: pop_up::State,
-        close: iced::button::State,
 
         name: NameSlot,
         wrap: NameSlot,
@@ -43,7 +60,6 @@ pub enum State {
 
     ProvideSprout {
         pop_up: pop_up::State,
-        close: iced::button::State,
 
         last_end: NameSlot,
         last_wrap: NameSlot,
@@ -54,7 +70,6 @@ pub enum State {
 
     ProvideSplit {
         pop_up: pop_up::State,
-        close: iced::button::State,
 
         name: NameSlot,
         wrap_top: NameSlot,
@@ -63,7 +78,6 @@ pub enum State {
 
     ProvidePass {
         pop_up: pop_up::State,
-        close: iced::button::State,
 
         last: NameSlot,
 
@@ -78,19 +92,25 @@ impl Default for State {
 }
 impl State {
     pub fn extrude() -> Self {
-        Self::ProvideExtrude { pop_up: fill![], close: fill![], name: fill![], wrap: fill![] }
+        Self::ProvideExtrude { pop_up: fill![], name: fill![], wrap: fill![] }
     }
 
     pub fn sprout() -> Self {
-        Self::ProvideSprout { pop_up: fill![], close: fill![], last_end: fill![], last_wrap: fill![], ends: fill![], wraps: fill![] }
+        Self::ProvideSprout { pop_up: fill![], last_end: fill![], last_wrap: fill![], ends: fill![], wraps: fill![] }
     }
 
     pub fn split() -> Self {
-        Self::ProvideSplit { pop_up: fill![], close: fill![], name: fill![], wrap_top: fill![], wrap_bot: fill![] }
+        Self::ProvideSplit { pop_up: fill![], name: fill![], wrap_top: fill![], wrap_bot: fill![] }
     }
 
     pub fn pass(groups_left: Vec<(opetope::Face, opetope::MetaCell<Data>)>) -> Self {
-        Self::ProvidePass { pop_up: fill![], close: fill![], last: fill![], wraps: fill![], groups_left }
+        Self::ProvidePass { pop_up: fill![], last: fill![], wraps: fill![], groups_left }
+    }
+
+    pub fn rename(names: Vec<String>) -> Self {
+        let remaining = names.into_iter().map(Into::into).collect();
+
+        Self::Rename { pop_up: fill![], remaining, renamed: vec![] }
     }
 
     pub fn take(&mut self) -> Self {
@@ -112,7 +132,7 @@ pub struct Layout {
     error_countdown: u64,
     error_pop_up: pop_up::State,
 
-    error: Option<opetope::Error>,
+    error: Option<Error>,
 
     pub state: State,
     sidebar: Sidebar,
@@ -121,7 +141,7 @@ pub struct Layout {
 
 
 impl Layout {
-    pub fn error(&mut self, e: opetope::Error) {
+    pub fn error(&mut self, e: Error) {
         self.error = Some(e);
         self.error_countdown = ERR_DURATION;
     }
@@ -143,6 +163,10 @@ impl Layout {
         let sidebar = self.sidebar.view(interact).map(GlobalMessage::Sidebar);// TODO: Max height or portion
         let opetope = opetope.view(interact).map(GlobalMessage::Opetope);
 
+        let opetope =
+        iced::Container::new(opetope)
+            .padding(PADDING);
+
         let mut main =
         iced::Row::new()
             .push(sidebar)
@@ -152,9 +176,7 @@ impl Layout {
         if self.error_countdown > 0 {
             let err_text = self.error.as_ref().unwrap().to_string();
 
-            let err_msg = iced::Container::new(iced::Text::new(err_text))
-                .width(iced::Length::Fill)
-                .style(crate::styles::container::Error);
+            let err_msg = Form::error(err_text);
 
             main =
             PopUp::new(main, err_msg)
@@ -166,18 +188,34 @@ impl Layout {
             State::Default =>
                 main,
 
-            State::ProvideExtrude { pop_up, close, name, wrap } =>
+            State::Rename { pop_up, remaining, .. } =>
                 PopUp::new(
                     main,
-                    iced::Container::new(
-                        iced::Row::new()
+                    Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
+                        .push({
+                            let last = remaining.last_mut().unwrap();
+
+                            iced::TextInput::new(
+                                &mut last.state,
+                                "Cell name",
+                                &last.value,
+                                |s| GlobalMessage::Layout(Message::UpdatedName(s)),
+                            ).padding(PADDING)
+                        }),
+                ).view(pop_up),
+
+            State::ProvideExtrude { pop_up, name, wrap } =>
+                PopUp::new(
+                    main,
+                    Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
+                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut name.state,
                                 "Group name",
                                 &name.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedName(s)),
-                            )
+                            ).padding(PADDING)
                         )
                         .push(
                             iced::TextInput::new(
@@ -185,30 +223,23 @@ impl Layout {
                                 "Group wrap",
                                 &wrap.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
-                            )
+                            ).padding(PADDING)
                         )
-                        .push(iced::Space::with_width(iced::Length::Fill))
-                        .push(
-                            close_button::CloseButton::new(close, false)
-                            .on_press(GlobalMessage::Layout(Message::ClosePopUp))
-                            .into_button()
-                        )
-                    )
-                    .style(crate::styles::container::PopUp),
+                        .push(iced::Space::with_width(iced::Length::Fill)),
                 ).view(pop_up),
 
-            State::ProvideSprout { pop_up, close, last_end, last_wrap, wraps, ends } =>
+            State::ProvideSprout { pop_up, last_end, last_wrap, wraps, ends } =>
                 PopUp::new(
                     main,
-                    iced::Container::new(
-                        iced::Row::new()
+                    Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
+                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut last_end.state,
                                 &format!["{} sprout's name", ends[wraps.len()].1.data().inner()],
                                 &last_end.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedName(s)),
-                            )
+                            ).padding(PADDING)
                         )
                         .push(
                             iced::TextInput::new(
@@ -216,30 +247,23 @@ impl Layout {
                                 "Wrap's name",
                                 &last_wrap.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
-                            )
+                            ).padding(PADDING)
                         )
-                        .push(iced::Space::with_width(iced::Length::Fill))
-                        .push(
-                            close_button::CloseButton::new(close, true)
-                            .on_press(GlobalMessage::Layout(Message::ClosePopUp))
-                            .into_button()
-                        )
-                    )
-                    .style(crate::styles::container::PopUp),
+                        .push(iced::Space::with_width(iced::Length::Fill)),
                 ).view(pop_up),
 
-            State::ProvideSplit { pop_up, close, name, wrap_top, wrap_bot } =>
+            State::ProvideSplit { pop_up, name, wrap_top, wrap_bot } =>
                 PopUp::new(
                     main,
-                    iced::Container::new(
-                        iced::Row::new()
+                    Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
+                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut name.state,
                                 "Group name",
                                 &name.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedName(s)),
-                            )
+                            ).padding(PADDING)
                         )
                         .push(
                             iced::TextInput::new(
@@ -247,7 +271,7 @@ impl Layout {
                                 "Top part wrap",
                                 &wrap_top.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
-                            )
+                            ).padding(PADDING)
                         )
                         .push(
                             iced::TextInput::new(
@@ -255,39 +279,25 @@ impl Layout {
                                 "Bottom part wrap",
                                 &wrap_bot.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedSecondWrap(s)),
-                            )
+                            ).padding(PADDING)
                         )
-                        .push(iced::Space::with_width(iced::Length::Fill))
-                        .push(
-                            close_button::CloseButton::new(close, false)
-                            .on_press(GlobalMessage::Layout(Message::ClosePopUp))
-                            .into_button()
-                        )
-                    )
-                    .style(crate::styles::container::PopUp),
+                        .push(iced::Space::with_width(iced::Length::Fill)),
                 ).view(pop_up),
 
-            State::ProvidePass { pop_up, close, groups_left, last, .. } =>
+            State::ProvidePass { pop_up, groups_left, last, .. } =>
                 PopUp::new(
                     main,
-                    iced::Container::new(
-                        iced::Row::new()
+                    Form::new(GlobalMessage::Layout(Message::ExitPopUp), GlobalMessage::Layout(Message::ConfirmPopUp))
+                        .push(iced::Space::with_width(iced::Length::Fill))
                         .push(
                             iced::TextInput::new(
                                 &mut last.state,
                                 &format!["{} wrap's name", groups_left.last().unwrap().1.data().inner()],
                                 &last.value,
                                 |s| GlobalMessage::Layout(Message::UpdatedFirstWrap(s)),
-                            )
+                            ).padding(PADDING)
                         )
-                        .push(iced::Space::with_width(iced::Length::Fill))
-                        .push(
-                            close_button::CloseButton::new(close, true)
-                            .on_press(GlobalMessage::Layout(Message::ClosePopUp))
-                            .into_button()
-                        )
-                    )
-                    .style(crate::styles::container::PopUp),
+                        .push(iced::Space::with_width(iced::Length::Fill)),
                 ).view(pop_up),
         }
     }

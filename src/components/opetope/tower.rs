@@ -177,6 +177,15 @@ impl<Data> Tower<Data> {
                 .unwrap_or(vec![])
         )
     }
+
+    pub fn rename(&mut self, cell: &ViewIndex, new_data: Data) -> Result<(), Error> {
+        let index = Self::valid_level(cell)?;
+
+        self.cells
+            .get_mut(index)
+            .map(|cell| *cell = new_data)
+            .map_err(|_| Error::NoSuchCell(cell.clone()))
+    }
 }
 
 impl<Data: Clone> Tower<Data> {

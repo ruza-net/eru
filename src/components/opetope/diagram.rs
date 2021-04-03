@@ -557,6 +557,27 @@ impl<Data> Diagram<Data> {
     }
 }
 
+// IMPL: Cell manipulation
+//
+impl<Data> Diagram<Data> {
+    pub fn rename(&mut self, cell: &ViewIndex, new_data: Data) -> Result<(), Error> {
+        if cell.level() == self.level() {
+            let path = self.valid_level(cell).unwrap();
+
+            let mut cell = self.get_mut(&path).ok_or(Error::NoSuchCell(cell.clone()))?;
+            cell.meta.data = new_data;
+
+            Ok(())
+
+        } else if cell.level() < self.level() {
+            self.prev.rename(cell, new_data)
+
+        } else {
+            Err(Error::TooMuchDepth(cell.level()))
+        }
+    }
+}
+
 // IMPL: Utils
 //
 impl<Data> Diagram<Data> {

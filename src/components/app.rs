@@ -7,10 +7,12 @@ use iced::{
 };
 
 use crate::components::{
-    sidebar,
     opetope::{ self, Diagram },
-    
-    general::main_layout::{ self, State, Layout },
+
+    general::{
+        sidebar,
+        main_layout::{ self, State, Layout },
+    },
 };
 
 
@@ -24,6 +26,17 @@ pub struct App {
     layout: Layout,
 }
 
+pub enum Error {
+    Opetope(opetope::Error),
+
+    EmptyName,
+}
+impl From<opetope::Error> for Error {
+    fn from(e: opetope::Error) -> Self {
+        Self::Opetope(e)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum GlobalMessage {
     Sidebar(sidebar::Message),
@@ -34,6 +47,12 @@ pub enum GlobalMessage {
     FocusNext,
 
     Ticked,
+    Idle,
+}
+impl Default for GlobalMessage {
+    fn default() -> Self {
+        Self::Idle
+    }
 }
 
 
@@ -53,7 +72,10 @@ impl Default for App {
 
 impl App {
     fn extrude(&mut self, name: Data, wrap: Data) {
-        if let Some(sel) = self.opetope.selected_cells() {
+        if name.is_empty() || wrap.is_empty() {
+            self.error(Error::EmptyName)
+
+        } else if let Some(sel) = self.opetope.selected_cells() {
             match
             self.opetope
                 .extrude(&sel, name, wrap)
@@ -61,13 +83,16 @@ impl App {
             {
                 Ok(_) => {},
 
-                Err(e) => self.error(e),
+                Err(e) => self.error(e.into()),
             }
         }
     }
 
     fn split(&mut self, name: Data, wrap_top: Data, wrap_bot: Data) {
-        if let Some(sel) = self.opetope.selected_cells() {
+        if name.is_empty() || wrap_bot.is_empty() || wrap_top.is_empty() {
+            self.error(Error::EmptyName)
+
+        } else if let Some(sel) = self.opetope.selected_cells() {
             match
             self.opetope
                 .split(&sel, name, wrap_top, wrap_bot)
@@ -75,13 +100,16 @@ impl App {
             {
                 Ok(_) => {},
 
-                Err(e) => self.error(e),
+                Err(e) => self.error(e.into()),
             }
         }
     }
 
     fn sprout(&mut self, data: Vec<(opetope::ViewIndex, Data, Data)>) {
-        if let Some(sel) = self.opetope.selected_cells() {
+        if data.iter().any(|(_, name, wrap)| name.is_empty() || wrap.is_empty()) {
+            self.error(Error::EmptyName)
+
+        } else if let Some(sel) = self.opetope.selected_cells() {
             for (cell, name, wrap) in data {
                 match
                 self.opetope
@@ -90,12 +118,38 @@ impl App {
                 {
                     Ok(_) => {},
 
-                    Err(e) => self.error(e),
+                    Err(e) => self.error(e.into()),
                 }
             }
         }
     }
 
+    fn prepare_rename(&mut self) {
+        if let Some(sel) = self.opetope.selected_cells() {
+            let mut old_names = vec![];
+
+            for cell in sel.as_cells() {
+                old_names.push(self.opetope.cell(&cell).unwrap().data().inner().clone());
+            }
+
+            self.layout.state = State::rename(old_names);
+        }
+    }
+
+    fn rename(&mut self, new_names: Vec<String>) {
+        let sel = self.opetope.selected_cells().unwrap();
+
+        for (cell, new_name) in sel.as_cells().iter().zip(new_names) {
+            match self.opetope.rename(cell, new_name.into()) {
+                Ok(_) => {},
+
+                Err(e) => self.error(e.into()),
+            }
+        }
+    }
+
+    // TODO: Custom workspace dirs
+    //
     fn save(&self) {
         use std::fs::File;
         use std::io::Write;
@@ -106,7 +160,22 @@ impl App {
         f.write(ser::to_string(&self.opetope).unwrap().as_bytes()).unwrap();
     }
 
-    fn error(&mut self, e: opetope::Error) {
+    // TODO: Custom workspace dirs
+    //
+    fn load(&mut self) {
+        use std::fs::File;
+        use std::io::Read;
+        use serde_json::de;
+
+        let mut f = File::open("/Users/honza/opetope.json").unwrap();
+
+        let mut buf = String::new();
+        f.read_to_string(&mut buf).unwrap();
+
+        self.opetope = de::from_str(&buf).unwrap();// TODO: Make this not panic, but `error`
+    }
+
+    fn error(&mut self, e: Error) {
         self.layout.error(e);
     }
 }
@@ -130,6 +199,8 @@ impl Application for App {
 
     fn update(&mut self, message: Self::Message, _: &mut iced::Clipboard) -> Command<Self::Message> {
         match message {
+            GlobalMessage::Idle => {},
+
             GlobalMessage::Sidebar(msg) =>
                 match msg {
                     sidebar::Message::Pass => {
@@ -177,8 +248,13 @@ impl Application for App {
                         }
                     },
 
+                    // TODO: Make rename tooltip
+
                     sidebar::Message::Save =>
                         self.save(),
+
+                    sidebar::Message::Load =>
+                        self.load(),
                 },
 
 
@@ -188,6 +264,9 @@ impl Application for App {
                         match &mut self.layout.state {
                             State::Default | State::ProvidePass { .. } =>
                                 unreachable![],
+
+                            State::Rename { remaining, .. } =>
+                                remaining.last_mut().unwrap().value = new_name,
 
                             State::ProvideExtrude { name, .. } =>
                                 name.value = new_name,
@@ -201,7 +280,8 @@ impl Application for App {
 
                     main_layout::Message::UpdatedFirstWrap(new_name) =>
                         match &mut self.layout.state {
-                            State::Default => unreachable![],
+                            State::Default | State::Rename { .. } =>
+                                unreachable![],
 
                             State::ProvideExtrude { wrap, .. } =>
                                 wrap.value = new_name,
@@ -218,7 +298,7 @@ impl Application for App {
 
                     main_layout::Message::UpdatedSecondWrap(new_name) =>
                         match &mut self.layout.state {
-                            State::Default | State::ProvidePass { .. } | State::ProvideSprout { .. } =>
+                            State::Default | State::ProvidePass { .. } | State::ProvideSprout { .. } | State::Rename { .. } =>
                                 unreachable![],
 
                             State::ProvideExtrude { wrap, .. } =>
@@ -228,9 +308,23 @@ impl Application for App {
                                 wrap_bot.value = new_name,
                         }
 
-                    main_layout::Message::ClosePopUp =>
+                    main_layout::Message::ConfirmPopUp =>
                         match self.layout.state.take() {// TODO: Reject empty names
-                            State::Default => {},
+                            State::Default =>
+                                self.prepare_rename(),
+
+                            State::Rename { mut remaining, mut renamed, pop_up } => {
+                                let last = remaining.pop().unwrap();
+
+                                renamed.push(last.value);
+
+                                if !remaining.is_empty() {
+                                    self.layout.state = State::Rename { remaining, renamed, pop_up };
+
+                                } else {
+                                    self.rename(renamed);
+                                }
+                            },
 
                             State::ProvideExtrude { name, wrap, .. } => {
                                 let name = name.value.into();
@@ -239,7 +333,7 @@ impl Application for App {
                                 self.extrude(name, wrap)
                             },
 
-                            State::ProvideSprout { mut wraps, mut ends, last_end, last_wrap, pop_up, close } => {
+                            State::ProvideSprout { mut wraps, mut ends, last_end, last_wrap, pop_up } => {
                                     assert![wraps.len() < ends.len(), "sprout saturated on `update`"];
 
                                     ends[wraps.len()].2 = Some(last_end.value.into());
@@ -261,7 +355,7 @@ impl Application for App {
                                         let last_end = fill![];
                                         let last_wrap = fill![];
 
-                                        self.layout.state = State::ProvideSprout { ends, wraps, last_end, last_wrap, pop_up, close };
+                                        self.layout.state = State::ProvideSprout { ends, wraps, last_end, last_wrap, pop_up };
                                     }
                                 },
 
@@ -273,7 +367,7 @@ impl Application for App {
                                 self.split(name, wrap_top, wrap_bot)
                             },
 
-                            State::ProvidePass { mut groups_left, mut wraps, last, pop_up, close } => {
+                            State::ProvidePass { mut groups_left, mut wraps, last, pop_up } => {
                                     assert![!groups_left.is_empty(), "pass saturated on `update`"];
 
                                     let (face, _) = groups_left.pop().unwrap();
@@ -288,16 +382,20 @@ impl Application for App {
                                             Ok(_) => {},
 
                                             Err(e) =>
-                                                self.error(e),
+                                                self.error(e.into()),
                                         }
 
                                     } else {
                                         let last = fill![];
 
-                                        self.layout.state = State::ProvidePass { groups_left, wraps, last, pop_up, close };
+                                        self.layout.state = State::ProvidePass { groups_left, wraps, last, pop_up };
                                     }
                                 },
                         },
+
+                    main_layout::Message::ExitPopUp => {
+                        self.layout.state.take();
+                    },
                 },
 
             GlobalMessage::Opetope(msg) =>
@@ -338,6 +436,9 @@ impl Application for App {
                     State::ProvidePass { last, .. } =>
                         last.state.focus(),
 
+                    State::Rename { remaining, .. } =>
+                        remaining.last_mut().unwrap().state.focus(),
+
                     _ => {},
                 },
             
@@ -364,7 +465,10 @@ impl Application for App {
                                         Some(GlobalMessage::FocusNext),
 
                                     iced::keyboard::KeyCode::Enter =>
-                                        Some(GlobalMessage::Layout(main_layout::Message::ClosePopUp)),
+                                        Some(GlobalMessage::Layout(main_layout::Message::ConfirmPopUp)),
+
+                                    iced::keyboard::KeyCode::Escape =>
+                                        Some(GlobalMessage::Layout(main_layout::Message::ExitPopUp)),
 
                                     iced::keyboard::KeyCode::E if not_editing =>
                                         Some(GlobalMessage::Sidebar(sidebar::Message::Enclose)),
@@ -435,6 +539,15 @@ impl fmt::Display for opetope::Error {
             opetope::Error::CannotExtrudeNestedCells(sel) =>
                 write![fmt, "INTERNAL: cannot extrude nested cells: {:?}", sel],
 
+        }
+    }
+}
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Opetope(e) => write![fmt, "{}", e],
+            
+            Self::EmptyName => write![fmt, "cell name cannot be empty"],
         }
     }
 }

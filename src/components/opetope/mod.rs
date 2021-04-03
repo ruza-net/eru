@@ -112,7 +112,9 @@ impl<Data> Tail<Data> {
         level() -> usize,
 
         is_before(before: &ViewIndex, after: &ViewIndex) -> bool,
-        is_at_bottom(cell: &viewing::Selection) -> Result<bool, Error>
+        is_at_bottom(cell: &viewing::Selection) -> Result<bool, Error>,
+
+        [mut] rename(cell: &ViewIndex, new_name: Data) -> Result<(), Error>
     }
 }
 

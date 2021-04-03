@@ -69,39 +69,52 @@ impl<Msg> Tooltip<Msg> {
     }
 }
 
-impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
-    pub fn view(&mut self, size: Option<u16>, render: Render) -> iced::Element<Msg> {
-        let mut btn = iced::Button::new(
-                &mut self.state,
+macro_rules! view {
+    ( $fn_name:ident $([$($lt:lifetime)? $mt:ident])? ( $self:ident $(, $arg:ident : $typ:ty)* $(,)? ) >> $state:expr, $size:ident, $render:ident ) => {
+        pub fn $fn_name<'s>(& $( $($lt)? $mt)? $self $(, $arg: $typ)* ) -> iced::Element<'s, Msg> {
+            let mut btn = iced::Button::new(
+                    $state,
 
-                self.icon.view(size)
-                    .map(|_| fill![]),
-            )
-            .style(crate::styles::container::Style::cell(self.icon.color));
+                    $self.icon.view($size)
+                        .map(|_| fill![]),
+                )
+                .style(crate::styles::container::Style::cell($self.icon.color));
 
-        if let Some(size) = size {
-            btn = btn
-                .height(iced::Length::Units(size))
-                .width(iced::Length::Units(size));
-        }
-
-        if render == Render::Interactive {
-            if let Some(on_press) = &self.on_press {
-                btn = btn.on_press(on_press.clone());
+            if let Some(size) = $size {
+                btn = btn
+                    .height(iced::Length::Units(size))
+                    .width(iced::Length::Units(size));
             }
 
-            if let Some(label) = &self.icon.label {
-                tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
-                .style(crate::styles::container::Tooltip)
-                .into()
+            if $render == Render::Interactive {
+                if let Some(on_press) = &$self.on_press {
+                    btn = btn.on_press(on_press.clone());
+                }
+
+                if let Some(label) = &$self.icon.label {
+                    tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
+                    .style(crate::styles::container::Tooltip)
+                    .into()
+
+                } else {
+                    btn.into()
+                }
 
             } else {
                 btn.into()
             }
-
-        } else {
-            btn.into()
         }
+    };
+}
+impl<Msg> Tooltip<Msg> where Msg: 'static + Clone + Default {
+    view! {
+        view['s mut](self, size: Option<u16>, render: Render)
+        >> &mut self.state, size, render
+    }
+
+    view! {
+        view_with_state(self, state: &'s mut button::State, size: Option<u16>, render: Render)
+        >> state, size, render
     }
 }
 
