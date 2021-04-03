@@ -1,15 +1,25 @@
-pub struct CloseButton<'s, Msg> {
-    state: &'s mut iced::button::State,
+use crate::model::Render;
+use crate::components::general::Tooltip;
+
+
+
+pub struct CloseButton<Msg> {
     pub is_arrow: bool,
     pub on_press: Option<Msg>,
 }
 
 
-impl<'s, Msg> CloseButton<'s, Msg> {
-    pub fn new(state: &'s mut iced::button::State, is_arrow: bool) -> Self {
+impl<Msg> CloseButton<Msg> {
+    pub fn cross() -> Self {
         Self {
-            state,
-            is_arrow,
+            is_arrow: false,
+            on_press: None,
+        }
+    }
+
+    pub fn arrow() -> Self {
+        Self {
+            is_arrow: true,
             on_press: None,
         }
     }
@@ -25,29 +35,20 @@ impl<'s, Msg> CloseButton<'s, Msg> {
     }
 }
 
-impl<'s, Msg: Clone> CloseButton<'s, Msg> {
-    pub fn into_button(self) -> iced::Button<'s, Msg> {
-        let mut btn = iced::Button::new(
-            self.state,
-            iced::Text::new(
-                if self.is_arrow {
-                    ">"
-                } else {
-                    "X"
-                }
-            )
-        );
+impl<Msg: 'static + Clone + Default> CloseButton<Msg> {
+    pub fn view(self, state: &mut iced::button::State) -> iced::Element<Msg> {
+        let res = if self.is_arrow {
+            "res/img/arrow"
+        } else {
+            "res/img/close"
+        };
+
+        let mut btn = Tooltip::from_file(res);
 
         if let Some(on_press) = self.on_press {
-            btn = btn.on_press(on_press);
+            btn.on_press(on_press);
         }
 
-        btn
-    }
-}
-
-impl<'s, Msg: Clone> From<CloseButton<'s, Msg>> for iced::Button<'s, Msg> {
-    fn from(this: CloseButton<'s, Msg>) -> Self {
-        this.into_button().into()
+        btn.view_with_state(state, None, Render::Interactive)
     }
 }
