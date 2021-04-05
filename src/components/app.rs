@@ -124,6 +124,34 @@ impl App {
         }
     }
 
+    fn cut(&mut self) {
+        // let mut error = None;
+
+        // take_mut::take(&mut self.opetope, |opetope| {
+        //     let backup = opetope.clone();
+
+        //     match opetope.retain_selected() {
+        //         Ok(None) =>
+        //             opetope::Tower::init("0".to_string().into()).1.into_next().unwrap(),
+
+        //         Ok(Some(restricted)) =>
+        //             restricted.to_diagram(),
+
+        //         Err(e) => {
+        //             error = Some(e);
+
+        //             backup
+        //         },
+        //     }
+        // });
+
+        self.opetope = opetope::Tower::init("0".to_string().into()).1.into_next().unwrap();
+
+        // if let Some(e) = error {
+        //     self.error(e.into());
+        // }
+    }
+
     fn prepare_rename(&mut self) {
         if let Some(sel) = self.opetope.selected_cells() {
             let mut old_names = vec![];
@@ -254,6 +282,9 @@ impl Application for App {
                     },
 
                     // TODO: Make rename tooltip
+
+                    sidebar::Message::Cut =>
+                        self.cut(),
 
                     sidebar::Message::Save =>
                         self.save(),

@@ -83,8 +83,12 @@ impl<Data> Diagram<Data> {
     }
 
     pub(in super) fn get(&self, path: &[TimelessIndex]) -> Option<&Cell<Data>> {
+        Self::get_helper(&self.cells, path)
+    }
+
+    fn get_helper<'s>(global: &'s TracingVec<Cell<Data>>, path: &[TimelessIndex]) -> Option<&'s Cell<Data>> {
         let mut acc =
-        self.cells
+        global
             .get(*path.first()?)
             .ok()?;
 
@@ -96,8 +100,12 @@ impl<Data> Diagram<Data> {
     }
 
     pub(in super) fn get_mut(&mut self, path: &[TimelessIndex]) -> Option<&mut Cell<Data>> {
+        Self::get_mut_helper(&mut self.cells, path)
+    }
+
+    fn get_mut_helper<'s>(global: &'s mut TracingVec<Cell<Data>>, path: &[TimelessIndex]) -> Option<&'s mut Cell<Data>> {
         let mut acc =
-        self.cells
+        global
             .get_mut(*path.first()?)
             .ok()?;
 
@@ -652,10 +660,15 @@ impl<Data> Diagram<Data> {
         }
     }
 
+
     fn cell_space_mut(&mut self, path: &[TimelessIndex]) -> &mut TracingVec<Cell<Data>> {
-        if self.get(path).is_some() {
+        Self::cell_space_mut_helper(&mut self.cells, path)
+    }
+
+    fn cell_space_mut_helper<'s>(global: &'s mut TracingVec<Cell<Data>>, path: &[TimelessIndex]) -> &'s mut TracingVec<Cell<Data>> {
+        if Self::get_helper(global, path).is_some() {
             let owner =
-            self.get_mut(path)
+            Self::get_mut_helper(global, path)
                 .unwrap();
 
             owner
@@ -664,7 +677,7 @@ impl<Data> Diagram<Data> {
                     .unwrap()
 
         } else {
-            &mut self.cells
+            global
         }
     }
 
@@ -694,6 +707,8 @@ impl<Data> Diagram<Data> {
         }
     }
 
+    // NOTE: Expects whole path to the cell.
+    //
     fn check_form_tree<'c>(&self, cells: &'c [Vec<TimelessIndex>]) -> Result<(&'c [TimelessIndex], Vec<TimelessIndex>), Error> {
         let ret = self.check_cells_connected(cells)?;
 
@@ -725,6 +740,8 @@ impl<Data> Diagram<Data> {
         }
     }
 
+    // NOTE: Expects whole path to the cell.
+    //
     fn check_cells_connected<'c>(&self, cells: &'c [Vec<TimelessIndex>]) -> Result<(&'c [TimelessIndex], Vec<TimelessIndex>), Error> {
         let heads: Vec<_> =
         cells
@@ -873,13 +890,7 @@ impl<Data> Diagram<data::Selectable<Data>> {
                 }
             }
 
-            let cell =
-            self
-                .get_mut(&cell.path())
-                .ok_or(Error::NoSuchCell(cell.clone()))?;
-
-            cell.data_mut()
-                .select();// TODO: Select all cells between `cell` and the boundary of `self.selected_cells()`.
+            self.select_unchecked(cell)?;// TODO: Select all cells between `cell` and the boundary of `self.selected_cells()`.
 
             Ok(self.selected_cells())
 
@@ -894,6 +905,15 @@ impl<Data> Diagram<data::Selectable<Data>> {
         }
     }
 
+    pub(in super) fn select_unchecked(&mut self, cell: &ViewIndex) -> Result<(), Error> {
+        self.get_mut(&cell.path())
+            .ok_or(Error::NoSuchCell(cell.clone()))?
+            .data_mut()
+            .select();
+
+        Ok(())
+    }
+
     pub fn unselect_all(&mut self, max_depth: usize) {
         if max_depth < self.level() {
             self.prev.unselect_all(max_depth);
@@ -906,9 +926,14 @@ impl<Data> Diagram<data::Selectable<Data>> {
 
     pub fn selected_cells(&self) -> Option<Selection> {
         if let Some(sel) = self.prev.selected_cells() {
-            return Some(sel);
-        }
+            Some(sel)
 
+        } else {
+            self.selected_cells_no_prev()
+        }
+    }
+
+    fn selected_cells_no_prev(&self) -> Option<Selection> {
         let all_selected =
         self.cells
             .iter_timeless_indices()
@@ -948,20 +973,93 @@ impl<Data> Diagram<data::Selectable<Data>> {
     }
 }
 
+impl<Data> Diagram<data::Selectable<Data>> {
+    pub fn retain_selected(self) -> Result<Option<Tail<data::Selectable<Data>>>, Error> {
+        use super::utils::CellCoordinator;
+
+        if let Some(sel) = self.selected_cells_no_prev() {
+            self.check_form_tree(&sel.as_paths())?;
+            let level = self.level() - 1;
+
+            let Self { prev, mut cells } = self;
+            let cell_space = Self::cell_space_mut_helper(&mut cells, &sel.common_path());
+
+            let selected_indices =
+            sel
+                .as_paths()
+                .into_iter()
+                .map(|mut path| path.pop().unwrap())
+                .collect_vec();
+
+            let other_cells =
+            cell_space
+                .timeless_indices()
+                .filter(|index| !selected_indices.contains(index));
+
+            for other_cell in other_cells {
+                cell_space.remove(other_cell);// TODO: Move out of `cell_space` into `cells`// FIXME: Messes up indices
+            }
+
+            let coordinator = CellCoordinator::new(level, cell_space);
+
+            let mut walker = coordinator.walk_breadth();
+
+            let mut select_prev = |mut prev: Tail<_>, _, cell: &mut MetaCell<data::Selectable<Data>>| {
+                prev.select(&cell.face().fill).unwrap();
+
+                ((), prev)
+            };
+
+            let mut retain_prev = |mut prev: Tail<_>, _| {
+                take_mut::take(
+                    &mut prev,
+                    |prev|
+                    prev.retain_selected()
+                        .unwrap()
+                        .unwrap()
+                );
+
+                prev
+            };
+
+            walker
+                .on_node(&mut select_prev)
+                .on_flatten(&mut retain_prev);
+
+            let prev = walker.walk(prev);
+
+            let mut this =
+            Self {
+                prev,
+                cells,
+            };
+
+            this.unselect_all(0);
+
+            Ok(Some(Tail::Diagram(Box::new(
+                this
+            ))))
+
+        } else {
+            self.prev.retain_selected()
+        }
+    }
+}
+
 
 // IMPL: Accessing
 //
 impl<Data> Cell<Data> {
-    const fn is_end(&self) -> bool {
+    pub const fn is_end(&self) -> bool {
         !self.is_group()
     }
 
-    const fn is_group(&self) -> bool {
+    pub const fn is_group(&self) -> bool {
         self.content.is_some()
     }
 
 
-    const fn face(&self) -> &Face {
+    pub const fn face(&self) -> &Face {
         &self.meta.face
     }
 
@@ -969,12 +1067,12 @@ impl<Data> Cell<Data> {
         &mut self.meta.face
     }
 
-    fn input_count(&self) -> usize {
+    pub fn input_count(&self) -> usize {
         self.face().ends.len()
     }
 
 
-    const fn data(&self) -> &Data {
+    pub const fn data(&self) -> &Data {
         &self.meta.data
     }
 
@@ -983,7 +1081,7 @@ impl<Data> Cell<Data> {
     }
 
 
-    fn get(&self, seg: TimelessIndex) -> Option<&Self> {
+    pub fn get(&self, seg: TimelessIndex) -> Option<&Self> {
         self.content
             .as_ref()?
             .get(seg)
@@ -1142,7 +1240,7 @@ impl Face {
 #[allow(dead_code)]
 pub mod viewing {
     use crate::components::opetope::{
-        Spacer,
+        utils::{ Spacer, CellCoordinator, routines, LINE_LEN },
         viewing::Message,
 
         diagram::*,
@@ -1151,251 +1249,12 @@ pub mod viewing {
     use crate::behavior;
     use crate::model::Render;
 
-    use crate::styles::container::{
-        PADDING,
-        LINE_WIDTH,
-        cell::{ SPACING },
-    };
+    use crate::styles::container::cell::{ SPACING };
 
-    pub const LINE_LEN: u16 = 3 * SPACING / 2;
-
-
-
-    fn pad<'e>(e: impl Into<iced::Element<'e, Message>>) -> iced::Element<'e, Message> {
-        iced::Row::with_children(vec![padder(), e.into(), padder()])
-        .spacing(PADDING)
-        .into()
-    }
-
-    fn padder() -> iced::Element<'static, Message> {
-        iced::Space::new(0.into(), 0.into()).into()
-    }
-
-    pub fn view_line(height: u16) -> iced::Element<'static, Message> {
-        iced::Container::new(
-            iced::Space::new(LINE_WIDTH.into(), height.into())
-        )
-        .style(crate::styles::container::LINE)
-        .into()
-    }
-
-    #[cfg(debug_assertions)]
-    fn spacer(width: u16, left: bool) -> iced::Element<'static, Message> {
-        iced::Container::new(
-            iced::Space::new(width.into(), 3.into())
-        )
-        .style(if left { crate::styles::container::DEBUG_1 } else { crate::styles::container::DEBUG_2 })
-        .into()
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn spacer(width: u16) -> iced::Element<'static, Message> {
-        iced::Space::with_width(width.into())
-        .into()
-    }
-
-
-    #[derive(Debug)]
-    struct CellCoordinator<'op, Data> {
-        cell: &'op mut MetaCell<Data>,
-        addr: ViewIndex,
-
-        inner: Option<Box<Self>>,
-        upstream: Vec<Option<Self>>,
-    }
-
-    /// Instance creation
-    ///
-    impl<'op, Data> CellCoordinator<'op, Data> {
-        pub fn new(level: usize, cell_space: &'op mut TracingVec<Cell<Data>>) -> CellCoordinator<'op, Data> {
-            Self::collect_from(level, vec![], &mut cell_space.iter_mut_timeless_indices().collect())
-        }
-
-        fn collect_from(
-            level: usize,
-            mut path: Vec<TimelessIndex>,
-            cell_space: &mut Vec<(TimelessIndex, &'op mut Cell<Data>)>,
-        ) -> CellCoordinator<'op, Data>
-        {
-            let (addr, cell) = cell_space.pop().unwrap();
-            let input_count = cell.input_count();
-
-            let mut upstream = vec![];
-
-            for i in (0 .. input_count).rev() {
-                let is_connected =
-                    cell_space
-                        .last()
-                        .map(|(_, next)| next.face().fill == cell.face().ends[i])
-                        .unwrap_or(false);
-
-                if is_connected {
-                    upstream.push(Some(Self::collect_from(level, path.clone(), cell_space)));
-
-                } else {
-                    upstream.push(None);
-                }
-            }
-
-            path.push(addr);
-
-            let inner =
-            cell.content
-                .as_mut()
-                .map(|inner_space|
-                    Box::new(Self::collect_from(level, path.clone(), &mut inner_space.iter_mut_timeless_indices().collect()))
-                );
-
-
-            let cell = &mut cell.meta;
-            let addr = ViewIndex::Leveled { level, path };
-
-            Self {
-                cell,
-                addr,
-
-                inner,
-                upstream,
-            }
-        }
-    }
-
-    /// Accessing
-    ///
-    impl<Data> CellCoordinator<'_, Data> {
-        pub fn input_count(&self) -> usize {
-            self.upstream
-                .iter()
-                .fold(0, |acc, up|
-                    if let Some(up) = up {
-                        acc + up.input_count()
-                        
-                    } else {
-                        acc + 1
-                    }
-                )
-        }
-    }
-
-    /// Viewing
-    ///
-    impl<'op, Data: behavior::SimpleView + std::fmt::Debug> CellCoordinator<'op, data::Selectable<Data>> {
-        pub fn view(self, render: Render) -> iced::Element<'op, Message> {
-            let widths = vec![fill![]; self.input_count()];
-
-            let without_line =
-            self.render(widths, render).2;
-
-            iced::Column::new()
-                .push(without_line)
-                .push(view_line(LINE_LEN))
-                .align_items(iced::Align::Center)
-                .into()
-        }
-
-        fn render(self, mut outer_widths: Vec<Spacer>, render: Render) -> (u16, Spacer, iced::Element<'op, Message>) {
-            let mut widths = vec![];
-            let mut heights = vec![];
-
-
-            // Rendering upstream subdiagrams
-            //
-            let upstream =
-            self.upstream
-                .into_iter()
-                .map(|up|
-                    if let Some(up) = up {
-                        let spaces = outer_widths.split_off(outer_widths.len() - up.input_count());
-
-                        let (height, width, up) = up.render(spaces, render);
-
-                        widths.push(width);
-                        heights.push(height);
-
-                        up
-
-                    } else {
-                        widths.push(outer_widths.pop().unwrap());
-                        heights.push(0);
-
-                        view_line(0)
-                    }
-                )
-                .collect_vec();
-
-
-            // Inserting output lines to adjust heights
-            //
-            let max_height = heights.iter().max().copied().unwrap_or(0) + LINE_LEN;
-
-            let mut upstream =
-            upstream
-                .into_iter()
-                .zip(heights)
-                .map(|(up, height)|
-                    iced::Column::new()
-                        .push(up)
-                        .push(view_line(max_height - height))
-                        .align_items(iced::Align::Center)
-                        .into()
-                )
-                .collect_vec();
-
-
-            // Rendering inner diagram
-            //
-            widths.reverse();
-            let mut flat_widths = widths.iter().map(Spacer::flatten).collect();
-
-            let (inner_height, inner_spacer, inner) =
-            if let Some(inner) = self.inner {
-                let (height, mut width, mut inner) = inner.render(flat_widths, render);
-
-                inner =
-                iced::Column::new()
-                    .push(inner)
-                    .push(view_line(LINE_LEN))
-                    .align_items(iced::Align::Center)
-                    .into();
-
-                width.pad(PADDING);
-
-                (height + LINE_LEN, width, Some(pad(inner)))
-
-            } else {
-                flat_widths.reverse();
-
-                (0, Spacer::group(0, flat_widths), None)
-            };
-
-
-            // Rendering the whole cell
-            //
-            let (data_height, mut spacer, this_cell) = self.cell.view(self.addr.clone(), inner, inner_spacer, render);
-
-            let height = max_height + inner_height + data_height;
-
-
-            // Spacing the upstream subdiagrams
-            //
-            let upstream = spacer.render(&mut upstream);
-
-            spacer.extend(widths);
-
-            let diagram =
-            iced::Column::new()
-                .push(upstream)
-                .push(this_cell)
-                .align_items(iced::Align::Center)
-                .into();
-
-            (height, spacer, diagram)
-        }
-    }
 
 
     impl<'c, Data: 'c> Diagram<data::Selectable<Data>>
-    where Data: behavior::SimpleView + std::fmt::Debug {
+    where Data: behavior::SimpleView {
         pub fn view(&mut self, render: Render) -> iced::Element<Message> {
             let level = self.level() - 1;// NOTE: Since `ViewIndex::Leveled` is shifted left.
 
@@ -1421,7 +1280,7 @@ pub mod viewing {
 
             let parts =
             if parts.is_empty() {
-                view_line(LINE_LEN)
+                routines::view_line(LINE_LEN)
 
             } else {
                 iced::Row::with_children(parts)
@@ -1450,7 +1309,7 @@ pub mod viewing {
 
     impl<Data> MetaCell<data::Selectable<Data>>
     where Data: behavior::SimpleView {
-        fn view<'s>(
+        pub fn view<'s>(
             &'s mut self,
 
             index: ViewIndex,

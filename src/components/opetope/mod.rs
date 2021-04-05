@@ -130,7 +130,7 @@ impl<Data: Clone> Tail<Data> {
 
 // IMPL: Viewing
 //
-impl<Data: SimpleView + std::fmt::Debug> Tail<data::Selectable<Data>> {
+impl<Data: SimpleView> Tail<data::Selectable<Data>> {
     common_methods! {
         [mut] view(render: crate::model::Render) -> iced::Element<viewing::Message>
     }
@@ -151,9 +151,31 @@ impl<Data: Clone> Tail<Data> {
 impl<Data> Tail<data::Selectable<Data>> {
     common_methods! {
         [mut] select(cell: &ViewIndex) -> Result<Option<viewing::Selection>, Error>,
+        [mut] select_unchecked(cell: &ViewIndex) -> Result<(), Error>,
         [mut] unselect_all(max_depth: usize),
 
         selected_cells() -> Option<Selection>
+    }
+}
+
+impl<Data> Tail<Data> {
+    pub fn to_diagram(self) -> Diagram<Data> {
+        match self {
+            Self::Tower(t) =>
+                t.into_next().unwrap(),
+
+            Self::Diagram(d) =>
+                *d,
+        }
+    }
+}
+
+impl<Data> Tail<data::Selectable<Data>> {
+    pub fn retain_selected(self) -> Result<Option<Self>, Error> {
+        match self {
+            Self::Tower(t) => Ok(t.retain_selected().map(Self::Tower)),
+            Self::Diagram(d) => d.retain_selected(),
+        }
     }
 }
 

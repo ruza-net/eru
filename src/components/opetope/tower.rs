@@ -2,6 +2,8 @@ use super::{
     *,
     viewing::{ ViewIndex, Selection, Index }
 };
+
+use crate::utils::ProjectIter;
 use serde::{ Serialize, Deserialize };
 
 
@@ -269,6 +271,17 @@ impl<Data> Tower<data::Selectable<Data>> {
         }
     }
 
+    pub fn select_unchecked(&mut self, cell: &ViewIndex) -> Result<(), Error> {
+        let index = Self::valid_level(cell)?;
+
+        self.cells
+            .get_mut(index)
+            .map_err(|_| Error::NoSuchCell(cell.clone()))?
+            .select();
+
+        Ok(())
+    }
+
     pub fn unselect_all(&mut self, _max_depth: usize) {
         self.cells
             .iter_mut()
@@ -281,6 +294,20 @@ impl<Data> Tower<data::Selectable<Data>> {
             .filter(|(_, cell)| cell.selected())
             .map(|(index, _)| Selection::Ground(index))
             .next()
+    }
+
+    pub fn retain_selected(mut self) -> Option<Self> {
+        let other_cells =
+        self.cells
+            .iter_timeless_indices()
+            .filter(|(_, cell)| cell.selected())
+            .proj_l();
+
+        for other_cell in other_cells {
+            self.cells.remove(other_cell);
+        }
+
+        Some(self)
     }
 }
 
