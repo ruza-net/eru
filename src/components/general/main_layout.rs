@@ -64,8 +64,8 @@ pub enum State {
         last_end: NameSlot,
         last_wrap: NameSlot,
         
-        wraps: Vec<Data>,
-        ends: Vec<(opetope::ViewIndex, opetope::Cell<Data>, Option<Data>)>,
+        wraps: Vec<String>,
+        ends: Vec<(opetope::ViewIndex, opetope::Cell<Data>, Option<String>)>,
     },
 
     ProvideSplit {

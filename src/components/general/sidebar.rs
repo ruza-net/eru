@@ -17,6 +17,7 @@ pub enum Message {
 
     Pass,
     Cut,
+    Rename,
 
     Save,
     Load,
@@ -53,12 +54,13 @@ impl Default for Sidebar {
             pass >> Pass,
 
             cut >> Cut,
+            rename >> Rename,
 
             save >> Save,
             load >> Load,
         };
 
-        this.tools.insert(4, None);
+        this.tools.insert(5, None);
         this.tools.insert(3, None);
 
         this

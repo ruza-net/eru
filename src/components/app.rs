@@ -18,6 +18,16 @@ use crate::components::{
 
 
 pub type Data = opetope::data::Selectable<String>;
+fn to_data(s: impl ToString) -> opetope::data::Selectable<String> {
+    let s = s.to_string();
+
+    if s.is_empty() {
+        " ".to_string().into()
+
+    } else {
+        s.into()
+    }
+}
 
 
 pub struct App {
@@ -72,10 +82,7 @@ impl Default for App {
 
 impl App {
     fn extrude(&mut self, name: Data, wrap: Data) {
-        if name.is_empty() || wrap.is_empty() {
-            self.error(Error::EmptyName)
-
-        } else if let Some(sel) = self.opetope.selected_cells() {
+        if let Some(sel) = self.opetope.selected_cells() {
             match
             self.opetope
                 .extrude(&sel, name, wrap)
@@ -89,10 +96,7 @@ impl App {
     }
 
     fn split(&mut self, name: Data, wrap_top: Data, wrap_bot: Data) {
-        if name.is_empty() || wrap_bot.is_empty() || wrap_top.is_empty() {
-            self.error(Error::EmptyName)
-
-        } else if let Some(sel) = self.opetope.selected_cells() {
+        if let Some(sel) = self.opetope.selected_cells() {
             match
             self.opetope
                 .split(&sel, name, wrap_top, wrap_bot)
@@ -106,10 +110,7 @@ impl App {
     }
 
     fn sprout(&mut self, data: Vec<(opetope::ViewIndex, Data, Data)>) {
-        if data.iter().any(|(_, name, wrap)| name.is_empty() || wrap.is_empty()) {
-            self.error(Error::EmptyName)
-
-        } else if self.opetope.selected_cells().is_some() {
+        if self.opetope.selected_cells().is_some() {
             for (cell, name, wrap) in data {
                 match
                 self.opetope
@@ -164,19 +165,14 @@ impl App {
         }
     }
 
-    fn rename(&mut self, new_names: Vec<String>) {
-        if new_names.iter().any(String::is_empty) {
-            self.error(Error::EmptyName);
+    fn rename(&mut self, new_names: Vec<Data>) {
+        let sel = self.opetope.selected_cells().unwrap();
 
-        } else {
-            let sel = self.opetope.selected_cells().unwrap();
+        for (cell, new_name) in sel.as_cells().iter().zip(new_names) {
+            match self.opetope.rename(cell, new_name) {
+                Ok(_) => {},
 
-            for (cell, new_name) in sel.as_cells().iter().zip(new_names) {
-                match self.opetope.rename(cell, new_name.into()) {
-                    Ok(_) => {},
-
-                    Err(e) => self.error(e.into()),
-                }
+                Err(e) => self.error(e.into()),
             }
         }
     }
@@ -281,10 +277,11 @@ impl Application for App {
                         }
                     },
 
-                    // TODO: Make rename tooltip
-
                     sidebar::Message::Cut =>
                         self.cut(),
+
+                    sidebar::Message::Rename =>
+                        self.prepare_rename(),
 
                     sidebar::Message::Save =>
                         self.save(),
@@ -345,7 +342,7 @@ impl Application for App {
                         }
 
                     main_layout::Message::ConfirmPopUp =>
-                        match self.layout.state.take() {// TODO: Reject empty names
+                        match self.layout.state.take() {
                             State::Default =>
                                 self.prepare_rename(),
 
@@ -358,47 +355,47 @@ impl Application for App {
                                     self.layout.state = State::Rename { remaining, renamed, pop_up };
 
                                 } else {
-                                    self.rename(renamed);
+                                    self.rename(renamed.into_iter().map(to_data).collect());
                                 }
                             },
 
                             State::ProvideExtrude { name, wrap, .. } => {
-                                let name = name.value.into();
-                                let wrap = wrap.value.into();
+                                let name = to_data(name.value);
+                                let wrap = to_data(wrap.value);
 
                                 self.extrude(name, wrap)
                             },
 
                             State::ProvideSprout { mut wraps, mut ends, last_end, last_wrap, pop_up } => {
-                                    assert![wraps.len() < ends.len(), "sprout saturated on `update`"];
+                                assert![wraps.len() < ends.len(), "sprout saturated on `update`"];
 
-                                    ends[wraps.len()].2 = Some(last_end.value.into());
-                                    wraps.push(last_wrap.value.into());
+                                ends[wraps.len()].2 = Some(last_end.value);
+                                wraps.push(last_wrap.value);
 
-                                    if wraps.len() == ends.len() {
-                                        self.sprout(
-                                            ends.into_iter()
-                                                .zip(wraps)
-                                                .map(|((index, _, sprout), wrap)| (
-                                                    index,
-                                                    sprout.unwrap(),
-                                                    wrap,
-                                                ))
-                                                .collect()
-                                        );
+                                if wraps.len() == ends.len() {
+                                    self.sprout(
+                                        ends.into_iter()
+                                            .zip(wraps)
+                                            .map(|((index, _, sprout), wrap)| (
+                                                index,
+                                                to_data(sprout.unwrap()),
+                                                to_data(wrap),
+                                            ))
+                                            .collect()
+                                    );
 
-                                    } else {
-                                        let last_end = fill![];
-                                        let last_wrap = fill![];
+                                } else {
+                                    let last_end = fill![];
+                                    let last_wrap = fill![];
 
-                                        self.layout.state = State::ProvideSprout { ends, wraps, last_end, last_wrap, pop_up };
-                                    }
-                                },
+                                    self.layout.state = State::ProvideSprout { ends, wraps, last_end, last_wrap, pop_up };
+                                }
+                            },
 
                             State::ProvideSplit { name, wrap_top, wrap_bot, .. } => {
-                                let name = name.value.into();
-                                let wrap_top = wrap_top.value.into();
-                                let wrap_bot = wrap_bot.value.into();
+                                let name = to_data(name.value);
+                                let wrap_top = to_data(wrap_top.value);
+                                let wrap_bot = to_data(wrap_bot.value);
 
                                 self.split(name, wrap_top, wrap_bot)
                             },
@@ -409,7 +406,7 @@ impl Application for App {
                                     let (face, _) = groups_left.pop().unwrap();
 
                                     wraps.push(opetope::MetaCell {
-                                        data: last.value.into(),
+                                        data: to_data(last.value),
                                         face,
                                     });
 
