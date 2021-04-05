@@ -6,6 +6,9 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+glow = ["iced/glow", "iced/glow_svg"]
+
 [dependencies]
 iced = { path = "iced", features = ["image", "tokio", "svg"] }
 iced_native = { path = "iced/native" }
