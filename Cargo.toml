@@ -7,8 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = { path = "lib/iced", features = ["image", "tokio", "svg"] }
-iced_native = { path = "lib/iced/native" }
+iced = { path = "iced", features = ["image", "tokio", "svg"] }
+iced_native = { path = "iced/native" }
 
 take_mut = "0.2"
 
