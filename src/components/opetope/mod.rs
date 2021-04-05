@@ -8,8 +8,7 @@ mod tower;
 pub use tower::Tower;
 
 
-mod spacer;
-pub use spacer::Spacer;
+pub mod utils;
 
 pub mod diagram;
 pub use diagram::{ Diagram, Face, MetaCell };

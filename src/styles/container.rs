@@ -29,18 +29,6 @@ pub const LINE: Style = Style {
 };
 
 
-#[cfg(debug_assertions)]
-pub const DEBUG_1: Style = Style {
-    kind: Kind::Line,
-    color: color![255, 0, 0],
-};
-
-#[cfg(debug_assertions)]
-pub const DEBUG_2: Style = Style {
-    kind: Kind::Line,
-    color: color![0, 255, 0],
-};
-
 
 pub const CELL: Style = Style {
     kind: Kind::Cell { selected: false },
