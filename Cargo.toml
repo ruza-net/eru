@@ -16,6 +16,7 @@ iced_native = { path = "iced/native" }
 take_mut = "0.2"
 
 ron = "0.6"
+home = "0.5"
 
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

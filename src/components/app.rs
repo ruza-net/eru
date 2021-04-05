@@ -40,6 +40,10 @@ pub enum Error {
     Opetope(opetope::Error),
 
     EmptyName,
+    NoHomeDir,
+
+    Deserialization(String),
+    PathError(String),
 }
 impl From<opetope::Error> for Error {
     fn from(e: opetope::Error) -> Self {
@@ -179,29 +183,53 @@ impl App {
 
     // TODO: Custom workspace dirs
     //
-    fn save(&self) {
+    fn save(&mut self) {
         use std::fs::File;
+
         use std::io::Write;
         use serde_json::ser;
 
-        let mut f = File::create("/Users/honza/opetope.json").unwrap();
+        match home::home_dir() {
+            Some(mut path) => {
+                path.push("opetope.json");
+                let mut f = File::create(path).unwrap();
 
-        f.write(ser::to_string(&self.opetope).unwrap().as_bytes()).unwrap();
+                f.write(ser::to_string(&self.opetope).unwrap().as_bytes()).unwrap();
+            },
+
+           None =>
+                self.error(Error::NoHomeDir),
+        }
     }
 
     // TODO: Custom workspace dirs
     //
     fn load(&mut self) {
         use std::fs::File;
+
         use std::io::Read;
         use serde_json::de;
 
-        let mut f = File::open("/Users/honza/opetope.json").unwrap();
+        match home::home_dir() {
+            Some(mut path) => {
+                path.push("opetope.json");
+                let mut f = File::open(path).unwrap();
 
-        let mut buf = String::new();
-        f.read_to_string(&mut buf).unwrap();
+                let mut buf = String::new();
+                f.read_to_string(&mut buf).unwrap();
 
-        self.opetope = de::from_str(&buf).unwrap();// TODO: Make this not panic, but `error`
+                match de::from_str(&buf) {
+                    Ok(op) =>
+                        self.opetope = op,
+
+                    Err(e) =>
+                        self.error(Error::Deserialization(e.to_string())),
+                }
+            },
+
+            None =>
+                self.error(Error::NoHomeDir),
+        }
     }
 
     fn error(&mut self, e: Error) {
@@ -578,6 +606,10 @@ impl fmt::Display for Error {
             Self::Opetope(e) => write![fmt, "{}", e],
             
             Self::EmptyName => write![fmt, "Cell name cannot be empty"],
+            Self::NoHomeDir => write![fmt, "Unknown platform, no home directory found"],
+
+            Self::Deserialization(e) => write![fmt, "Deserialization error: {}", e],
+            Self::PathError(e) => write![fmt, "File error: {}", e],
         }
     }
 }
