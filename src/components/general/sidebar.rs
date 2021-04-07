@@ -99,7 +99,12 @@ pub mod style {
     use iced::container;
 
 
+    #[cfg(not(feature = "glow"))]
     pub const WIDTH: u16 = 32;
+
+    #[cfg(feature = "glow")]
+    pub const WIDTH: u16 = 128;
+
     pub const BG_SHADE: f32 = 230.;
 
     pub struct Default;

@@ -91,12 +91,22 @@ impl Icon {
         use iced::Length;
 
         match &self.data {
-            Data::Image(img) => iced::svg::Svg::new(img.clone())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
+            #[cfg(not(feature = "glow"))]
+            Data::Image(img) =>
+                iced::svg::Svg::new(img.clone())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
 
-            Data::Element(el) => el.view().1,
+            #[cfg(feature = "glow")]
+            Data::Image(_) =>
+                iced::Text::new(self.label.clone().unwrap_or("?".to_string()))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+
+            Data::Element(el) =>
+                el.view().1,
 
             Data::Text(txt) => {
                 let mut txt = iced::Text::new(txt.clone())

@@ -44,6 +44,6 @@ impl<Msg: 'static + Clone + Default> CloseButton<Msg> {
             btn.on_press(on_press);
         }
 
-        btn.view_with_state(state, None, Render::Interactive)
+        btn.view_with_state(state, None, Render::InteractiveNoLabel)
     }
 }

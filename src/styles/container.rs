@@ -55,6 +55,8 @@ pub struct Style {
 #[derive(Debug, Clone, Copy)]
 enum Kind {
     Line,
+    Tooltip,
+
     Cell { selected: bool },
 }
 
@@ -62,6 +64,13 @@ impl Style {
     pub fn cell(color: iced::Color) -> Self {
         Self {
             kind: Kind::Cell { selected: false },
+            color,
+        }
+    }
+
+    pub fn tooltip(color: iced::Color) -> Self {
+        Self {
+            kind: Kind::Tooltip,
             color,
         }
     }
@@ -87,31 +96,51 @@ impl Style {
 impl container::StyleSheet for Style {
     fn style(&self) -> container::Style {
         match self.kind {
-            Kind::Cell { selected } => container::Style {
-                border_color: self.color,
-                border_width: cell::WIDTH,
-                border_radius: cell::RADIUS,
+            Kind::Cell { selected } =>
+                container::Style {
+                    border_color: self.color,
+                    border_width: cell::WIDTH,
+                    border_radius: cell::RADIUS,
 
-                background: Some({
-                    if selected {
-                        color::SELECTED.into()
+                    background: Some({
+                        if selected {
+                            color::SELECTED.into()
 
-                    } else if self.color == iced::Color::BLACK {
-                        iced::Color::WHITE.into()
+                        } else if self.color == iced::Color::BLACK {
+                            iced::Color::WHITE.into()
 
-                    } else {
-                        self.lighten_color().into()
-                    }
-                }),
+                        } else {
+                            self.lighten_color().into()
+                        }
+                    }),
 
-                ..fill![]
-            },
+                    ..fill![]
+                },
 
-            Kind::Line => container::Style {
-                background: Some(self.color.into()),
+            Kind::Tooltip =>
+                container::Style {
+                    border_width: cell::WIDTH,
+                    border_radius: cell::RADIUS,
+                    border_color: iced::Color::WHITE,
 
-                ..fill![]
-            },
+                    background: Some({
+                        if self.color == iced::Color::BLACK {
+                            iced::Color::WHITE.into()
+
+                        } else {
+                            self.lighten_color().into()
+                        }
+                    }),
+
+                    ..fill![]
+                },
+
+            Kind::Line =>
+                container::Style {
+                    background: Some(self.color.into()),
+
+                    ..fill![]
+                },
         }
     }
 }
@@ -154,32 +183,53 @@ impl container::StyleSheet for Error {
 impl iced::button::StyleSheet for Style {
     fn active(&self) -> iced::button::Style {
         match self.kind {
-            Kind::Cell { selected } => iced::button::Style {
-                shadow_offset: [0., 0.].into(),
-                background: Some({
-                    if selected {
-                        color::SELECTED.into()
+            Kind::Cell { selected } =>
+                iced::button::Style {
+                    shadow_offset: [0., 0.].into(),
+                    background: Some({
+                        if selected {
+                            color::SELECTED.into()
 
-                    } else if self.color == iced::Color::BLACK {
-                        iced::Color::WHITE.into()
+                        } else if self.color == iced::Color::BLACK {
+                            iced::Color::WHITE.into()
 
-                    } else {
-                        self.lighten_color().into()
-                    }
-                }),
+                        } else {
+                            self.lighten_color().into()
+                        }
+                    }),
 
-                border_radius: cell::RADIUS,
-                border_width: cell::WIDTH,
-                border_color: self.color,
+                    border_radius: cell::RADIUS,
+                    border_width: cell::WIDTH,
+                    border_color: self.color,
 
-                text_color: self.color,
-            },
+                    text_color: self.color,
+                },
 
-            Kind::Line => iced::button::Style {
-                background: Some(self.color.into()),
+            Kind::Tooltip =>
+                iced::button::Style {
+                    shadow_offset: [0., 0.].into(),
+                    background: Some({
+                        if self.color == iced::Color::BLACK {
+                            iced::Color::WHITE.into()
 
-                ..fill![]
-            },
+                        } else {
+                            self.lighten_color().into()
+                        }
+                    }),
+
+                    border_color: iced::Color::WHITE,
+                    border_radius: cell::RADIUS,
+                    border_width: cell::WIDTH,
+
+                    text_color: self.color,
+                },
+
+            Kind::Line =>
+                iced::button::Style {
+                    background: Some(self.color.into()),
+
+                    ..fill![]
+                },
         }
     }
 

@@ -76,20 +76,33 @@ macro_rules! view {
                     $self.icon.view($size)
                         .map(|_| fill![]),
                 )
-                .style(crate::styles::container::Style::cell($self.icon.color));
+                .style(crate::styles::container::Style::tooltip($self.icon.color));
 
+            #[cfg(not(feature = "glow"))]
             if let Some(size) = $size {
                 btn = btn
                     .height(iced::Length::Units(size))
                     .width(iced::Length::Units(size));
             }
 
-            if $render == Render::Interactive {
+            #[cfg(feature = "glow")]
+            if let Some(size) = $size {
+                btn = btn
+                    .width(iced::Length::Units(size));
+            }
+
+            if $render == Render::Static {
+                btn.into()
+
+            } else {
                 if let Some(on_press) = &$self.on_press {
                     btn = btn.on_press(on_press.clone());
                 }
 
-                if let Some(label) = &$self.icon.label {
+                if $render == Render::InteractiveNoLabel {
+                    btn.into()
+
+                } else if let Some(label) = &$self.icon.label {
                     tooltip::Tooltip::new(btn, label, tooltip::Position::FollowCursor)
                     .style(crate::styles::container::Tooltip)
                     .into()
@@ -97,9 +110,6 @@ macro_rules! view {
                 } else {
                     btn.into()
                 }
-
-            } else {
-                btn.into()
             }
         }
     };
